@@ -11,6 +11,7 @@ import { HOME_AGENCIES_TEASER } from "@/lib/agencyDirectoryCopy";
 import { liveVersionOf } from "@/lib/sourcesApi";
 import { hasRole } from "@/lib/roles";
 import { useAuth } from "@/providers/AuthProvider";
+import { Landing } from "@/components/landing/Landing";
 import type { Listing } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAppData } from "@/providers/DataProvider";
@@ -87,7 +88,7 @@ const BUILT_FOR_ROWS: { icon: LucideIcon; title: string; body: string }[] = [
 
 export default function Index() {
   const { listings, scope, listingsByAgency, sources, isLoading, selectedSource, selectedLiveVersion } = useAppData();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const agency = selectedSource?.agencyInfo ?? null;
   const versionCount = useMemo(() => sources.reduce((n, src) => n + src.versions.length, 0), [sources]);
   /** Timestamp of the newest live version in scope. */
@@ -302,6 +303,9 @@ export default function Index() {
       .slice(0, 6);
   }, [listingsByAgency, sources]);
 
+  // Signed-out visitors get the public landing page; the dashboard below needs an account.
+  if (!authLoading && !user) return <Landing />;
+
   if (isLoading && !hasData) {
     return (
       <div className="min-h-screen bg-[#0a0a0a]">
@@ -488,7 +492,7 @@ export default function Index() {
         className="bg-gradient-to-b from-primary/[0.14] via-[#0b100e] to-[#0a0a0a] text-white border-b border-white/[0.06]"
       >
         <div className="max-w-[1320px] mx-auto px-6 py-20 lg:py-28">
-          <p className="text-[11px] uppercase tracking-[0.35em] text-brand-slate mb-4 font-body">About FeedView</p>
+          <p className="text-[11px] uppercase tracking-[0.35em] text-brand-slate mb-4 font-body">About Feed Viewer Pro</p>
           <h2
             id="section-about-heading"
             className="font-heading font-semibold text-3xl sm:text-4xl lg:text-5xl leading-[1.1] tracking-tight max-w-4xl mb-14"
@@ -699,7 +703,7 @@ export default function Index() {
             Built for teams who own listing data end to end
           </h2>
           <p className="text-sm text-white/55 font-body max-w-2xl mb-12 leading-relaxed">
-            Whether you integrate feeds for clients or review them in-house, FeedView keeps structure, coverage, and quality visible —
+            Whether you integrate feeds for clients or review them in-house, Feed Viewer Pro keeps structure, coverage, and quality visible —
             without standing up a separate staging portal.
           </p>
           <div className="grid md:grid-cols-3 gap-6">
@@ -1395,7 +1399,7 @@ export default function Index() {
                 Ship feeds your team can trust.
               </h2>
               <p className="text-primary-foreground/75 text-sm leading-relaxed mb-8 max-w-md font-body">
-                Bring your XML, invite your analysts, and use FeedView as the single place to review listing data before it hits production.
+                Bring your XML, invite your analysts, and use Feed Viewer Pro as the single place to review listing data before it hits production.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Button

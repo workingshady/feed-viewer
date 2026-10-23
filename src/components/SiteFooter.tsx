@@ -1,7 +1,10 @@
 import { cn } from "@/lib/utils";
-import { SITE_FOOTER_GROUPS } from "@/lib/siteFooterData";
+import { siteFooterGroups } from "@/lib/siteFooterData";
+import { useAuth } from "@/providers/AuthProvider";
+import { useSignupStatus } from "@/hooks/useSignupStatus";
 import { Keyboard } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { BrandMark } from "@/components/BrandLogo";
 
 export type SiteFooterVariant = "brand" | "surface";
 
@@ -17,6 +20,9 @@ type SiteFooterProps = {
 export function SiteFooter({ variant = "surface", className }: SiteFooterProps) {
   const isBrand = variant === "brand";
   const year = new Date().getFullYear();
+  const { user } = useAuth();
+  const signupOpen = useSignupStatus().data?.open ?? false;
+  const groups = siteFooterGroups(user?.role, signupOpen);
 
   return (
     <footer
@@ -39,19 +45,12 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
                 "inline-flex items-center gap-3 rounded-xl outline-none transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 isBrand ? "focus-visible:ring-offset-[#070807]" : "focus-visible:ring-offset-background",
               )}
-              aria-label="FeedView home"
+              aria-label="Feed Viewer Pro home"
             >
-              <span className="sr-only">FeedView</span>
-              <img
-                src="/logo.webp"
-                alt=""
-                width={280}
-                height={64}
-                className={cn(
-                  "h-10 w-auto max-w-[min(220px,52vw)] object-contain object-left sm:h-11",
-                  isBrand && "brightness-0 invert contrast-110 opacity-95",
-                )}
-              />
+              <BrandMark className="h-10 w-10" title="" />
+              <span className={cn("font-heading text-lg font-extrabold tracking-tight", isBrand ? "text-white" : "text-foreground")}>
+                Feed Viewer <span className={isBrand ? "text-[#7FD8A9]" : "text-primary-text"}>Pro</span>
+              </span>
             </Link>
             <p
               className={cn(
@@ -59,12 +58,12 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
                 isBrand ? "text-white/65" : "text-muted-foreground",
               )}
             >
-              XML property feed viewer — import, map, validate, compare, and browse listings with operational clarity.
+              Real-estate XML feeds with a version history: upload, compare, roll back and track listing quality.
             </p>
           </div>
 
           <div className="grid min-w-0 flex-1 grid-cols-1 gap-10 sm:grid-cols-2 xl:grid-cols-4 xl:gap-x-10">
-          {SITE_FOOTER_GROUPS.map((group) => (
+          {groups.map((group) => (
             <nav key={group.id} className="min-w-0 space-y-3" aria-labelledby={`footer-${group.id}`}>
               <h2
                 id={`footer-${group.id}`}
@@ -105,7 +104,7 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
           )}
         >
           <p className={cn("text-[12px] font-body order-2 sm:order-1", isBrand ? "text-white/45" : "text-muted-foreground")}>
-            © {year} FeedView. Property feed tooling for teams and integrators.
+            © {year} Feed Viewer Pro.
           </p>
           <div
             className={cn(

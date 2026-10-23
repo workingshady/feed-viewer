@@ -56,7 +56,7 @@ export default function ShortcutsHelpPage() {
             Keyboard shortcuts
           </h1>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-prose">
-            Reference tables plus workflow notes aligned with FeedView&apos;s ingest → validate → compare loop. Toggle tabs
+            Reference tables plus workflow notes for the upload → review → apply loop. Toggle tabs
             below — your choice is remembered for this session.
           </p>
         </header>

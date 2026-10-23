@@ -30,7 +30,7 @@ export function buildWorkspaceDigestMarkdown(input: WorkspaceDigestInput): strin
     : "_none selected_";
 
   return [
-    `### FeedView — workspace snapshot`,
+    `### Feed Viewer Pro — workspace snapshot`,
     ``,
     `- **Generated:** ${ts}`,
     `- **Listings scope:** ${input.scopeLabel}`,

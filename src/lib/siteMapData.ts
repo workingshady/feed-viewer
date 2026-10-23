@@ -10,6 +10,8 @@ import {
 export type SiteMapLink = {
   to: string;
   label: string;
+  description?: string;
+  icon?: NavItem["icon"];
   /** Signed-in workspace route */
   auth?: boolean;
   /** Restricted to admin role */
@@ -30,6 +32,11 @@ export const SITEMAP_REDIRECTS: { from: string; to: string; note?: string }[] = 
   { from: "/geo", to: "/listings/map" },
   { from: "/insights", to: "/workspace-insights" },
   { from: "/account/profile", to: "/account", note: "Same page, profile tab" },
+  { from: "/import", to: "/sources", note: "Uploads now happen on Sources" },
+  { from: "/import-dashboard", to: "/sources", note: "Version history replaced the import dashboard" },
+  { from: "/stream-feeds", to: "/sources", note: "Folder streaming was replaced by multi-file upload" },
+  { from: "/streaming", to: "/sources" },
+  { from: "/workspace", to: "/account" },
 ];
 
 /** Parameterized routes (detail screens) */
@@ -60,6 +67,8 @@ function navItemsToLinks(items: NavItem[]): SiteMapLink[] {
   return items.map((i) => ({
     to: i.to,
     label: i.label,
+    description: i.description,
+    icon: i.icon,
     auth: i.to !== "/",
     admin: i.minRole === "admin",
   }));
@@ -69,17 +78,17 @@ function navItemsToLinks(items: NavItem[]): SiteMapLink[] {
  * Sections for `/sitemap`, rendered from the same navigation model as the header.
  * Items the role cannot use are omitted.
  */
-export function buildSiteMapSections(role: string | undefined): SiteMapSection[] {
+export function buildSiteMapSections(role: string | undefined, signupOpen: boolean): SiteMapSection[] {
   const signedIn = Boolean(role);
   const core: SiteMapSection[] = [
     {
       id: "public",
       heading: "Entry points",
-      description: "Public pages.",
+      description: "Open to everyone.",
       items: [
-        { to: "/", label: "Home" },
-        { to: "/login", label: "Sign in" },
-        { to: "/signup", label: "Create account" },
+        { to: "/", label: "Home", description: "What Feed Viewer Pro does" },
+        { to: "/login", label: "Sign in", description: "Use the account an administrator gave you" },
+        ...(signupOpen ? [{ to: "/signup", label: "Create account", description: "New accounts start as viewers" }] : []),
       ],
     },
   ];
@@ -87,7 +96,7 @@ export function buildSiteMapSections(role: string | undefined): SiteMapSection[]
     core.push({
       id: "main",
       heading: "Main",
-      description: "Top-level destinations in the header.",
+      description: "The header's top-level pages.",
       items: navItemsToLinks(TOP_NAV_ITEMS.filter((i) => i.to !== "/")),
     });
     for (const g of visibleNavGroups(role)) {
@@ -102,7 +111,7 @@ export function buildSiteMapSections(role: string | undefined): SiteMapSection[]
       core.push({
         id: "admin",
         heading: "Administration",
-        description: "Operator console (admin role only).",
+        description: "Administrators only.",
         items: navItemsToLinks([ADMIN_NAV_ITEM]),
       });
     }
@@ -110,7 +119,7 @@ export function buildSiteMapSections(role: string | undefined): SiteMapSection[]
   core.push({
     id: "site",
     heading: "Site map",
-    items: [{ to: "/sitemap", label: "All pages (HTML sitemap)" }],
+    items: [{ to: "/sitemap", label: "Site map", description: "This page" }],
   });
   return core;
 }

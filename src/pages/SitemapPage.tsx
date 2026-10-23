@@ -11,10 +11,12 @@ import { useAuth } from "@/providers/AuthProvider";
 import { ListTree } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useMemo } from "react";
+import { useSignupStatus } from "@/hooks/useSignupStatus";
 
 export default function SitemapPage() {
   const { user } = useAuth();
-  const sections = useMemo(() => buildSiteMapSections(user?.role), [user?.role]);
+  const signupOpen = useSignupStatus().data?.open ?? false;
+  const sections = useMemo(() => buildSiteMapSections(user?.role, signupOpen), [user?.role, signupOpen]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -28,8 +30,8 @@ export default function SitemapPage() {
             Site map
           </h1>
           <p className="text-muted-foreground text-sm leading-relaxed max-w-prose">
-            Every organized route in FeedView — same groupings as the navigation menu and footer shortcuts. Dynamic paths
-            and redirects are listed at the bottom.
+            Every page in Feed Viewer Pro, grouped like the navigation menu.{" "}
+            {user ? "Only pages your role can use are listed." : "Sign in to see the workspace pages."}
           </p>
         </header>
 
@@ -50,11 +52,17 @@ export default function SitemapPage() {
                     <Link
                       to={item.to}
                       className={cn(
-                        "flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-sm shadow-sm transition-colors",
+                        "flex items-start gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-sm shadow-sm transition-colors",
                         "hover:bg-accent/50 hover:border-primary/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                       )}
                     >
-                      <span className="font-medium text-foreground">{item.label}</span>
+                      {item.icon ? <item.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-text" aria-hidden /> : null}
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium text-foreground">{item.label}</span>
+                        {item.description ? (
+                          <span className="block text-xs text-muted-foreground">{item.description}</span>
+                        ) : null}
+                      </span>
                       <span className="flex items-center gap-2 shrink-0">
                         {item.admin ? (
                           <Badge variant="outline" className="text-[10px] font-normal">

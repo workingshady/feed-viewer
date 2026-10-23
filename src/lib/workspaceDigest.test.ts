@@ -15,7 +15,7 @@ describe("buildWorkspaceDigestMarkdown", () => {
       importTime: "2026-01-15T12:00:00.000Z",
       liveVersionSummary: "v3 · feed.xml · 120 rows",
     });
-    expect(md).toContain("FeedView — workspace snapshot");
+    expect(md).toContain("Feed Viewer Pro — workspace snapshot");
     expect(md).toContain("Acme Realty");
     expect(md).toContain("120");
     expect(md).toContain("escalating feed");

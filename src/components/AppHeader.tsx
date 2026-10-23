@@ -27,6 +27,8 @@ import { useAppData } from "@/providers/DataProvider";
 import { ChevronDown, LogIn, LogOut, Menu, Search, UserCircle, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import { BrandLogo, BrandMark } from "@/components/BrandLogo";
+import { useSignupStatus } from "@/hooks/useSignupStatus";
 
 /** Same surface as `HomeSectionNav` outer bar — one glass recipe site-wide */
 const HEADER_GLASS =
@@ -167,7 +169,7 @@ const AppHeader = () => {
 
   const isHome = pathname === "/";
   const hero = isHome && !scrolled;
-  const isAuthRoute = pathname === "/login" || pathname === "/signup";
+  const signupOpen = useSignupStatus().data?.open ?? false;
   const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || "");
 
   return (
@@ -186,25 +188,15 @@ const AppHeader = () => {
         />
         <div className="w-full max-w-[1440px] mx-auto px-4 lg:px-5 flex items-center h-16 md:h-[72px] gap-2 lg:gap-4 min-w-0">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 min-w-0 shrink-0 group" aria-label="FeedView home">
-            <img
-              src="/logo.webp"
-              alt=""
-              width={300}
-              height={64}
-              className={cn(
-                "w-auto object-contain object-left shrink-0 brightness-0 invert contrast-110 group-hover:scale-[1.02] transition-transform duration-200",
-                isAuthRoute ? "h-14 max-w-[min(260px,50vw)]" : "h-10 md:h-12 max-w-[min(140px,38vw)] md:max-w-[200px]",
-                hero && "drop-shadow-[0_1px_10px_rgba(0,0,0,0.45)]",
-              )}
-            />
+          <Link to="/" className="flex items-center gap-2 min-w-0 shrink-0 group" aria-label="Feed Viewer Pro home">
+            <BrandMark className="h-8 w-8 transition-transform duration-200 group-hover:scale-105" title="" />
             <span
               className={cn(
-                "font-heading font-semibold tracking-tight hidden xl:block truncate text-base",
+                "font-heading font-extrabold tracking-tight hidden sm:block truncate text-base",
                 hero ? "text-white" : "text-foreground",
               )}
             >
-              FeedView
+              Feed Viewer <span className={hero ? "text-[#7FD8A9]" : "text-primary-text"}>Pro</span>
             </span>
           </Link>
 
@@ -313,24 +305,26 @@ const AppHeader = () => {
                 >
                   <Link to="/login">
                     <LogIn className="w-3.5 h-3.5 mr-1.5" />
-                    Login
+                    Sign in
                   </Link>
                 </Button>
-                <Button
-                  asChild
-                  size="sm"
-                  className={cn(
-                    "font-semibold rounded-full h-8 px-4 shadow-lg border-0",
-                    hero
-                      ? "bg-brand-green text-primary-foreground hover:bg-brand-green/90"
-                      : "bg-secondary hover:bg-secondary/90 text-secondary-foreground",
-                  )}
-                >
-                  <Link to="/signup">
-                    <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-                    Sign up
-                  </Link>
-                </Button>
+                {signupOpen && (
+                  <Button
+                    asChild
+                    size="sm"
+                    className={cn(
+                      "font-semibold rounded-full h-8 px-4 shadow-lg border-0",
+                      hero
+                        ? "bg-brand-green text-primary-foreground hover:bg-brand-green/90"
+                        : "bg-secondary hover:bg-secondary/90 text-secondary-foreground",
+                    )}
+                  >
+                    <Link to="/signup">
+                      <UserPlus className="w-3.5 h-3.5 mr-1.5" />
+                      Create account
+                    </Link>
+                  </Button>
+                )}
               </div>
             )}
 
@@ -357,7 +351,7 @@ const AppHeader = () => {
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <div className="flex h-[100dvh] max-h-[100dvh] flex-col bg-card">
             <div className="flex items-center gap-2 px-4 h-16 border-b border-border shrink-0">
-              <span className="font-heading font-semibold text-sm text-foreground">FeedView</span>
+              <BrandLogo />
             </div>
             <nav
               id="mobile-main-nav"
@@ -423,11 +417,13 @@ const AppHeader = () => {
               ) : !isLoading ? (
                 <div className="flex gap-2">
                   <Button asChild variant="outline" className="flex-1 min-h-[44px]">
-                    <Link to="/login">Login</Link>
+                    <Link to="/login">Sign in</Link>
                   </Button>
-                  <Button asChild className="flex-1 min-h-[44px]">
-                    <Link to="/signup">Sign up</Link>
-                  </Button>
+                  {signupOpen && (
+                    <Button asChild className="flex-1 min-h-[44px]">
+                      <Link to="/signup">Create account</Link>
+                    </Button>
+                  )}
                 </div>
               ) : null}
             </div>

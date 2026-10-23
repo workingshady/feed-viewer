@@ -21,7 +21,7 @@ export type HomeSectionCommand = { slug: string; label: string; hint?: string };
 /** Static home sections (always present). Workspace is added when user has listings. */
 export const HOME_SECTION_COMMANDS_BASE: readonly HomeSectionCommand[] = [
   { slug: "capabilities", label: "Capabilities", hint: "Import, field mapping, validation, browse" },
-  { slug: "audiences", label: "Audience", hint: "Who FeedView is for" },
+  { slug: "audiences", label: "Audience", hint: "Who Feed Viewer Pro is for" },
   { slug: "workflow", label: "Workflow", hint: "XML to portal-ready" },
   { slug: "quality", label: "Quality", hint: "Field precision" },
   { slug: "preview", label: "Preview", hint: "Listing table" },

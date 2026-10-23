@@ -42,7 +42,7 @@ export type NavGroup = {
 
 /** Always-visible top-level destinations (single source of truth for header, palette, sitemap). */
 export const TOP_NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "Home", icon: Home },
+  { to: "/", label: "Home", icon: Home, description: "Overview of live listings and agencies" },
   { to: "/sources", label: "Sources", icon: FolderInput, description: "Agency feeds, versions and quality" },
   { to: "/listings", label: "Listings", icon: LayoutGrid, description: "Browse and filter live listings" },
 ];
@@ -53,24 +53,24 @@ export const NAV_GROUPS: NavGroup[] = [
     id: "explore",
     heading: "Explore",
     items: [
-      { to: "/listings/map", label: "Map", icon: Globe2 },
-      { to: "/database", label: "Database", icon: Database },
-      { to: "/favorites", label: "Favorites", icon: Star },
-      { to: "/agencies", label: "Agencies", icon: Building2 },
-      { to: "/agents", label: "Agents", icon: Users },
-      { to: "/random-listing", label: "Random listing", icon: Shuffle },
+      { to: "/listings/map", label: "Map", icon: Globe2, description: "Listings on a map, with location checks" },
+      { to: "/database", label: "Database", icon: Database, description: "Sortable table of every live listing" },
+      { to: "/favorites", label: "Favorites", icon: Star, description: "Listings you starred" },
+      { to: "/agencies", label: "Agencies", icon: Building2, description: "One card per source with inventory and history" },
+      { to: "/agents", label: "Agents", icon: Users, description: "Agents across all agencies" },
+      { to: "/random-listing", label: "Random listing", icon: Shuffle, description: "Jump to a random live listing" },
     ],
   },
   {
     id: "analyze",
     heading: "Analyze",
     items: [
-      { to: "/workspace-insights", label: "Insights", icon: PieChart },
-      { to: "/field-quality", label: "Field quality", icon: ScanSearch },
-      { to: "/validation", label: "Validation", icon: ClipboardList },
-      { to: "/cross-agency-dupes", label: "Duplicates across agencies", icon: Link2 },
-      { to: "/compare", label: "Compare listings", icon: GitCompare },
-      { to: "/feed-compare", label: "Compare versions", icon: GitCompareArrows },
+      { to: "/workspace-insights", label: "Insights", icon: PieChart, description: "Totals, mix and recent versions" },
+      { to: "/field-quality", label: "Field quality", icon: ScanSearch, description: "How complete each field is, per version" },
+      { to: "/validation", label: "Validation", icon: ClipboardList, description: "Parser issues and changes vs the previous version" },
+      { to: "/cross-agency-dupes", label: "Duplicates across agencies", icon: Link2, description: "The same property listed by several agencies" },
+      { to: "/compare", label: "Compare listings", icon: GitCompare, description: "Two or more listings side by side" },
+      { to: "/feed-compare", label: "Compare versions", icon: GitCompareArrows, description: "Added, removed and changed listings between versions" },
     ],
   },
   {
@@ -78,16 +78,16 @@ export const NAV_GROUPS: NavGroup[] = [
     heading: "Setup",
     minRole: "editor",
     items: [
-      { to: "/field-mapping", label: "Field mapping", icon: Map },
-      { to: "/mapping-qa", label: "Mapping QA", icon: ClipboardCheck },
+      { to: "/field-mapping", label: "Field mapping", icon: Map, description: "Map XML paths to listing fields per source" },
+      { to: "/mapping-qa", label: "Mapping QA", icon: ClipboardCheck, description: "Check a mapping against the raw XML" },
     ],
   },
 ];
 
 /** User-menu destinations. */
-export const ACCOUNT_NAV_ITEM: NavItem = { to: "/account", label: "Account", icon: LayoutDashboard };
-export const ADMIN_NAV_ITEM: NavItem = { to: "/admin", label: "Admin", icon: Shield, minRole: "admin" };
-export const SHORTCUTS_NAV_ITEM: NavItem = { to: "/shortcuts", label: "Shortcuts", icon: Keyboard };
+export const ACCOUNT_NAV_ITEM: NavItem = { to: "/account", label: "Account", icon: LayoutDashboard, description: "Profile, password and sign out" };
+export const ADMIN_NAV_ITEM: NavItem = { to: "/admin", label: "Admin", icon: Shield, minRole: "admin", description: "Users, roles and the audit log" };
+export const SHORTCUTS_NAV_ITEM: NavItem = { to: "/shortcuts", label: "Shortcuts", icon: Keyboard, description: "Keyboard shortcuts" };
 
 export type RoleLike = string | null | undefined;
 
