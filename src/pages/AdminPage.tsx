@@ -17,6 +17,7 @@ import {
 } from "@/lib/adminApi";
 import { formatBytes, timeAgo } from "@/components/sources/format";
 import { useAppData } from "@/providers/useAppData";
+import { AdminCharts } from "@/components/admin/AdminCharts";
 import { InviteUserButton, PendingInvitesCard, ResetLinkButton, SharedLinksCard } from "@/components/admin/AccessCards";
 import { ApiError } from "@/lib/api";
 import { roleLabel, type AppRole } from "@/lib/roles";
@@ -156,6 +157,7 @@ const AdminPage = () => {
 
   const [auditFilter, setAuditFilter] = useState<(typeof AUDIT_FILTERS)[number]["value"]>("all");
   const prefix = AUDIT_FILTERS.find((f) => f.value === auditFilter)?.prefix;
+  const { sources } = useAppData();
   const users = useQuery({ queryKey: ["admin-users"], queryFn: fetchAdminUsers });
   const status = useQuery({ queryKey: ["admin-status"], queryFn: fetchAdminStatus, refetchInterval: 60_000 });
   const audit = useInfiniteQuery({
@@ -169,6 +171,7 @@ const AdminPage = () => {
     void qc.invalidateQueries({ queryKey: ["admin-users"] });
     void qc.invalidateQueries({ queryKey: ["admin-audit"] });
     void qc.invalidateQueries({ queryKey: ["admin-status"] });
+    void qc.invalidateQueries({ queryKey: ["admin-activity"] });
   };
 
   const setRole = useMutation({
@@ -185,13 +188,12 @@ const AdminPage = () => {
   });
 
   const events = audit.data?.pages.flatMap((p) => p.events) ?? [];
-  const { sources } = useAppData();
   const sourceName = (id: unknown) => sources.find((s) => s.id === id)?.name ?? null;
 
   return (
     <div className="min-h-screen bg-background">
       <AppHeader />
-      <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-8">
+      <main className="container max-w-6xl space-y-6 py-8">
         <div>
           <h1 className="font-heading text-2xl font-semibold tracking-tight">Administration</h1>
           <p className="text-sm text-muted-foreground">System health, user access and everything that changed.</p>
@@ -212,6 +214,8 @@ const AdminPage = () => {
             {status.data ? <SystemStatus status={status.data} /> : null}
           </CardContent>
         </Card>
+
+        <AdminCharts sources={sources} users={users.data ?? []} />
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">

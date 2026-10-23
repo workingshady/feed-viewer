@@ -96,7 +96,9 @@ adminRouter.get(
     }
     for (const e of events) {
       const row = byDay.get(e.day.toISOString().slice(0, 10));
-      const grp = (ACTIVITY_GROUPS as readonly string[]).includes(e.grp) ? e.grp : null;
+      // Invites and account events count as "user" (users & access).
+      const g = e.grp === "invite" || e.grp === "auth" ? "user" : e.grp;
+      const grp = (ACTIVITY_GROUPS as readonly string[]).includes(g) ? g : null;
       if (row && grp) row[grp] += Number(e.n);
     }
     for (const l of logins) {

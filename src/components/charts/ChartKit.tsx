@@ -170,7 +170,7 @@ export function HBars<T extends Record<string, string | number>>({
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 40, bottom: 0, left: 0 }} barCategoryGap={6}>
         <CartesianGrid horizontal={false} stroke={GRID} />
-        <XAxis type="number" tick={AXIS} axisLine={false} tickLine={false} domain={[0, max ?? "auto"]} tickFormatter={valueFormat} />
+        <XAxis type="number" tick={AXIS} axisLine={false} tickLine={false} allowDecimals={false} domain={[0, max ?? "auto"]} tickFormatter={valueFormat} />
         <YAxis type="category" dataKey={labelKey} width={128} tick={AXIS} axisLine={false} tickLine={false} interval={0} />
         <Tooltip {...RECHARTS_TOOLTIP_PROPS} cursor={RECHARTS_BAR_CURSOR} formatter={(v: number) => valueFormat(v)} />
         {series.map((s, i) => (
