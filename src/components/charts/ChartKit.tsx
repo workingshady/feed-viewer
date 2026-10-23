@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from "react";
-import { BarChart3, Download, Table2 } from "lucide-react";
+import { BarChart3, ChevronDown, Download, Search, Table2 } from "lucide-react";
 import {
   Bar,
   BarChart,
+  Brush,
   CartesianGrid,
   Cell,
   LabelList,
@@ -21,6 +22,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RECHARTS_BAR_CURSOR, RECHARTS_LINE_CURSOR, RECHARTS_TOOLTIP_PROPS } from "@/lib/chartTheme";
 import { downloadText } from "@/components/sources/format";
@@ -37,6 +39,75 @@ export type SeriesDef = { key: string; label: string; color: string };
 export type TableData = { columns: string[]; rows: (string | number)[][] };
 
 const fmt = (n: number) => (Number.isInteger(n) ? n.toLocaleString() : n.toFixed(1));
+
+/** Axis ticks stay short (1.2K, 34K, 2.5M); tooltips and labels keep the full number. */
+function compact(n: number): string {
+  const a = Math.abs(n);
+  const unit = a >= 1e9 ? [1e9, "B"] : a >= 1e6 ? [1e6, "M"] : a >= 1e3 ? [1e3, "K"] : null;
+  if (!unit) return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  const v = n / (unit[0] as number);
+  return `${Math.abs(v) >= 100 ? Math.round(v) : Number(v.toFixed(1))}${unit[1]}`;
+}
+
+/** Axis formatter: compact for plain counts, the caller's format for %, money, MB… */
+const axisFmt = (valueFormat: (n: number) => string) => (valueFormat === fmt ? compact : valueFormat);
+
+/** Width that fits the longest tick label, so long numbers never clip and short ones waste no space. */
+const axisWidth = (values: number[], f: (n: number) => string) =>
+  Math.min(72, Math.max(28, Math.max(...values.map((v) => f(v).length), 1) * 7 + 8));
+
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+type TickProps = { x?: number; y?: number; payload?: { value: string | number } };
+
+/** Category tick that shortens long names to fit and shows the full name on hover. */
+function CategoryTick({ x = 0, y = 0, payload, max, angled }: TickProps & { max: number; angled?: boolean }) {
+  const full = String(payload?.value ?? "");
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{full}</title>
+      <text
+        dy={angled ? 4 : 4}
+        dx={angled ? -4 : -6}
+        textAnchor="end"
+        transform={angled ? "rotate(-35)" : undefined}
+        fontSize={11}
+        fill="hsl(var(--muted-foreground))"
+      >
+        {clip(full, max)}
+      </text>
+    </g>
+  );
+}
+
+/** Top rows first with a "Show all" expander, plus a filter box once the list is long. */
+function useLongList<T>(rows: T[], limit: number, label: (row: T) => string) {
+  const [expanded, setExpanded] = useState(false);
+  const [q, setQ] = useState("");
+  const query = q.trim().toLowerCase();
+  const filtered = query ? rows.filter((r) => label(r).toLowerCase().includes(query)) : rows;
+  const visible = expanded || query ? filtered : filtered.slice(0, limit);
+  const controls =
+    rows.length > limit ? (
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        {rows.length > 20 ? (
+          <div className="relative w-full sm:w-56">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter…" className="h-8 pl-8 text-xs" aria-label="Filter rows" />
+          </div>
+        ) : (
+          <span />
+        )}
+        {!query && (
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? "Show top " + limit : `Show all ${rows.length}`}
+            <ChevronDown className={cn("ml-1 h-3.5 w-3.5 transition-transform", expanded && "rotate-180")} />
+          </Button>
+        )}
+      </div>
+    ) : null;
+  return { visible, controls, hidden: filtered.length - visible.length };
+}
 
 export function Legend({ series }: { series: { label: string; color: string }[] }) {
   return (
@@ -143,7 +214,7 @@ export function ChartCard({
 }) {
   const [asTable, setAsTable] = useState(false);
   return (
-    <Card className={cn("flex min-w-0 flex-col", className)}>
+    <Card className={cn("flex min-w-0 flex-col overflow-hidden", className)}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
         <div className="min-w-0 space-y-1">
           <CardTitle className="text-sm">{title}</CardTitle>
@@ -177,6 +248,7 @@ export function HBars<T extends Record<string, string | number>>({
   valueFormat = fmt,
   onSelect,
   max,
+  limit = 15,
 }: {
   data: T[];
   labelKey: keyof T & string;
@@ -185,17 +257,41 @@ export function HBars<T extends Record<string, string | number>>({
   onSelect?: (row: T) => void;
   /** Fixed domain max (e.g. 100 for percentages). */
   max?: number;
+  /** Rows shown before "Show all". */
+  limit?: number;
 }) {
+  const list = useLongList(data, limit, (r) => String(r[labelKey]));
   if (!data.length) return <EmptyChart />;
-  const height = Math.max(120, data.length * 30 + 24);
+  const shown = list.visible;
+  const height = Math.max(120, shown.length * 28 + 28);
   const last = series.length - 1;
-  const rows = data.map((r) => ({ ...r, __total: series.reduce((n, s) => n + (Number(r[s.key]) || 0), 0) }));
+  const rows = shown.map((r) => ({ ...r, __total: series.reduce((n, s) => n + (Number(r[s.key]) || 0), 0) }));
+  const longest = Math.max(...shown.map((r) => String(r[labelKey]).length), 4);
+  const labelChars = Math.min(24, longest);
   return (
+    <div>
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 40, bottom: 0, left: 0 }} barCategoryGap={6}>
         <CartesianGrid horizontal={false} stroke={GRID} />
-        <XAxis type="number" tick={AXIS} axisLine={false} tickLine={false} allowDecimals={false} domain={[0, max ?? "auto"]} tickFormatter={valueFormat} />
-        <YAxis type="category" dataKey={labelKey} width={128} tick={AXIS} axisLine={false} tickLine={false} interval={0} />
+        <XAxis
+          type="number"
+          tick={AXIS}
+          axisLine={false}
+          tickLine={false}
+          allowDecimals={false}
+          domain={[0, max ?? "auto"]}
+          tickFormatter={axisFmt(valueFormat)}
+          tickCount={5}
+        />
+        <YAxis
+          type="category"
+          dataKey={labelKey}
+          width={labelChars * 6.4 + 14}
+          tick={<CategoryTick max={labelChars} />}
+          axisLine={false}
+          tickLine={false}
+          interval={0}
+        />
         <Tooltip {...RECHARTS_TOOLTIP_PROPS} cursor={RECHARTS_BAR_CURSOR} formatter={(v: number) => valueFormat(v)} />
         {series.map((s, i) => (
           <Bar
@@ -207,7 +303,7 @@ export function HBars<T extends Record<string, string | number>>({
             stroke="hsl(var(--card))"
             strokeWidth={1}
             radius={i === last ? [0, 4, 4, 0] : 0}
-            onClick={onSelect ? (_d: unknown, idx: number) => onSelect(data[idx]) : undefined}
+            onClick={onSelect ? (_d: unknown, idx: number) => onSelect(shown[idx]) : undefined}
             className={onSelect ? "cursor-pointer" : undefined}
             maxBarSize={22}
           >
@@ -218,6 +314,8 @@ export function HBars<T extends Record<string, string | number>>({
         ))}
       </BarChart>
     </ResponsiveContainer>
+    {list.controls}
+    </div>
   );
 }
 
@@ -245,12 +343,32 @@ export function Columns<T extends Record<string, string | number>>({
 }) {
   if (!data.length) return <EmptyChart />;
   const last = series.length - 1;
+  // Crowded or long category names: angle them and shorten, every label stays visible.
+  const longest = Math.max(...data.map((r) => String(r[xKey]).length));
+  const angled = data.length > 8 || data.length * longest > 60;
+  const totals = data.flatMap((r) => series.map((s) => Number(r[s.key]) || 0));
+  const yFmt = axisFmt(valueFormat);
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }} barCategoryGap="18%" stackOffset="sign">
+    <ResponsiveContainer width="100%" height={height + (angled ? 36 : 0)}>
+      <BarChart data={data} margin={{ top: 8, right: 4, bottom: angled ? 8 : 0, left: angled ? 24 : 0 }} barCategoryGap="18%" stackOffset="sign">
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey={xKey} tick={AXIS} axisLine={{ stroke: GRID }} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
-        <YAxis tick={AXIS} axisLine={false} tickLine={false} allowDecimals={false} tickFormatter={valueFormat} />
+        <XAxis
+          dataKey={xKey}
+          axisLine={{ stroke: GRID }}
+          tickLine={false}
+          interval={0}
+          height={angled ? 64 : 24}
+          tick={angled ? <CategoryTick max={14} angled /> : { ...AXIS }}
+        />
+        <YAxis
+          tick={AXIS}
+          axisLine={false}
+          tickLine={false}
+          allowDecimals={false}
+          tickFormatter={yFmt}
+          tickCount={5}
+          width={axisWidth(totals, yFmt)}
+        />
         <Tooltip {...RECHARTS_TOOLTIP_PROPS} cursor={RECHARTS_BAR_CURSOR} formatter={(v: number) => valueFormat(Math.abs(v))} />
         <ReferenceLine y={0} stroke="hsl(var(--border))" />
         {series.map((s, i) => (
@@ -292,12 +410,27 @@ export function Lines<T extends Record<string, string | number | null>>({
   domain?: [number, number];
 }) {
   if (!data.length) return <EmptyChart />;
+  const yFmt = axisFmt(valueFormat);
+  const values = data.flatMap((r) => series.map((s) => Number(r[s.key]) || 0));
+  // Long timelines get a brush to zoom into a range; the strip keeps the whole series in view.
+  const zoomable = data.length > 24;
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -12 }}>
+    <ResponsiveContainer width="100%" height={height + (zoomable ? 32 : 0)}>
+      <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
         <CartesianGrid vertical={false} stroke={GRID} />
-        <XAxis dataKey={xKey} tick={AXIS} axisLine={{ stroke: GRID }} tickLine={false} minTickGap={16} />
-        <YAxis tick={AXIS} axisLine={false} tickLine={false} tickFormatter={valueFormat} domain={domain ?? ["auto", "auto"]} />
+        <XAxis dataKey={xKey} tick={AXIS} axisLine={{ stroke: GRID }} tickLine={false} minTickGap={24} />
+        <YAxis
+          tick={AXIS}
+          axisLine={false}
+          tickLine={false}
+          tickFormatter={yFmt}
+          tickCount={5}
+          width={axisWidth(values, yFmt)}
+          domain={domain ?? ["auto", "auto"]}
+        />
+        {zoomable && (
+          <Brush dataKey={xKey} height={22} travellerWidth={8} stroke="hsl(var(--border))" fill="hsl(var(--card))" startIndex={Math.max(0, data.length - 24)} />
+        )}
         <Tooltip {...RECHARTS_TOOLTIP_PROPS} cursor={RECHARTS_LINE_CURSOR} formatter={(v: number) => valueFormat(v)} />
         {series.map((s) => (
           <Line
@@ -407,8 +540,8 @@ export function ScatterPlot<T extends Record<string, string | number>>({
   tooltipLabel?: (row: T) => string;
 }) {
   if (!data.length) return <EmptyChart />;
-  const xf = x.format ?? fmt;
-  const yf = y.format ?? fmt;
+  const xf = x.format ?? compact;
+  const yf = y.format ?? compact;
   return (
     <ResponsiveContainer width="100%" height={height}>
       <ScatterChart margin={{ top: 8, right: 12, bottom: 16, left: -4 }}>
@@ -486,11 +619,20 @@ export function Heatmap({
   format?: (v: number) => string;
   onRow?: (row: string) => void;
 }) {
+  const [q, setQ] = useState("");
   if (!rows.length) return <EmptyChart />;
+  const shown = q.trim() ? rows.filter((r) => r.toLowerCase().includes(q.trim().toLowerCase())) : rows;
   return (
-    <div className="overflow-x-auto">
+    <div className="space-y-2">
+      {rows.length > 12 && (
+        <div className="relative w-full sm:w-56">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter rows…" className="h-8 pl-8 text-xs" aria-label="Filter rows" />
+        </div>
+      )}
+    <div className="max-h-[28rem] overflow-auto">
       <table className="w-full border-separate border-spacing-0.5 text-xs">
-        <thead>
+        <thead className="sticky top-0 z-10 bg-card">
           <tr>
             <th />
             {columns.map((c) => (
@@ -501,9 +643,9 @@ export function Heatmap({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {shown.map((r) => (
             <tr key={r}>
-              <th scope="row" className="max-w-40 truncate pr-2 text-left font-normal text-muted-foreground">
+              <th scope="row" className="max-w-40 truncate pr-2 text-left font-normal text-muted-foreground" title={r}>
                 {onRow ? (
                   <button type="button" className="truncate hover:text-foreground hover:underline" onClick={() => onRow(r)}>
                     {r}
@@ -532,6 +674,7 @@ export function Heatmap({
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

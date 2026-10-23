@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { HealthDot, ScoreBadge, healthOf } from "@/components/sources/health";
@@ -12,6 +14,9 @@ type Col = "name" | "listings" | "score" | "photos" | "permit" | "coords" | "upd
 /** Side-by-side quality and size of every source's live version, sortable by any column. */
 export function SourceComparisonTable({ sources }: { sources: SourceDTO[] }) {
   const [sort, setSort] = useState<{ col: Col; desc: boolean }>({ col: "listings", desc: true });
+  const [q, setQ] = useState("");
+  const [expanded, setExpanded] = useState(false);
+  const LIMIT = 10;
 
   const rows = useMemo(() => {
     const data = sources.map((s) => {
@@ -54,12 +59,23 @@ export function SourceComparisonTable({ sources }: { sources: SourceDTO[] }) {
   );
 
   const share = (v: number | null) => (v == null ? "—" : pct(v));
+  const query = q.trim().toLowerCase();
+  const filtered = query ? rows.filter((r) => r.s.name.toLowerCase().includes(query)) : rows;
+  const visible = expanded || query ? filtered : filtered.slice(0, LIMIT);
 
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base">Sources compared</CardTitle>
-        <CardDescription>Live version of each source. Click a column to sort, a name to manage it.</CardDescription>
+      <CardHeader className="flex flex-row flex-wrap items-end justify-between gap-3 space-y-0 pb-2">
+        <div className="space-y-1">
+          <CardTitle className="text-base">Sources compared</CardTitle>
+          <CardDescription>Live version of each source. Click a column to sort, a name to manage it.</CardDescription>
+        </div>
+        {rows.length > LIMIT && (
+          <div className="relative w-full sm:w-56">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a source…" className="h-8 pl-8 text-xs" aria-label="Find a source" />
+          </div>
+        )}
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>
@@ -75,7 +91,7 @@ export function SourceComparisonTable({ sources }: { sources: SourceDTO[] }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((r) => (
+            {visible.map((r) => (
               <TableRow key={r.s.id}>
                 <TableCell>
                   <Link to={`/sources?source=${r.s.id}`} className="inline-flex items-center gap-2 font-medium hover:underline">
@@ -105,6 +121,13 @@ export function SourceComparisonTable({ sources }: { sources: SourceDTO[] }) {
             ))}
           </TableBody>
         </Table>
+        {!query && rows.length > LIMIT && (
+          <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? `Show top ${LIMIT}` : `Show all ${rows.length} sources`}
+            <ChevronDown className={`ml-1 h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </Button>
+        )}
+        {query && filtered.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No source matches "{q}".</p>}
       </CardContent>
     </Card>
   );

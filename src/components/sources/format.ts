@@ -12,7 +12,11 @@ export function formatBytes(bytes: number): string {
   return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
 }
 
-export const timeAgo = (iso: string) => formatDistanceToNow(new Date(iso), { addSuffix: true });
+/** "3 hours ago". Times slightly in the future (server clock ahead of the browser) read as "just now". */
+export const timeAgo = (iso: string) => {
+  const d = new Date(iso);
+  return d.getTime() > Date.now() - 30_000 ? "just now" : formatDistanceToNow(d, { addSuffix: true });
+};
 
 export const pct = (share: number) => `${Math.round(share * 100)}%`;
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Line, LineChart, ResponsiveContainer } from "recharts";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -55,6 +55,11 @@ export function SourceList({
 }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("updated");
+  const listRef = useRef<HTMLUListElement>(null);
+  // Keep the selected source visible inside the scroll area (e.g. when opened from a link).
+  useEffect(() => {
+    listRef.current?.querySelector("[data-selected]")?.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
 
   const all = useMemo(
     () =>
@@ -133,13 +138,22 @@ export function SourceList({
           ))}
       </div>
 
-      <ul className="flex flex-col gap-1.5" aria-label="Sources">
+      <p className="text-xs text-muted-foreground">
+        {rows.length === sources.length ? `${sources.length} sources` : `${rows.length} of ${sources.length} sources`}
+      </p>
+      {/* Own scroll area so a long list never pushes the details down the page. */}
+      <ul
+        ref={listRef}
+        className="-mr-1 flex max-h-80 flex-col gap-1.5 overflow-y-auto overscroll-contain pr-1 md:max-h-[calc(100dvh-15rem)]"
+        aria-label="Sources"
+      >
         {rows.map(({ s, health, live, delta }) => (
           <li key={s.id}>
             <button
               type="button"
               onClick={() => onSelect(s.id)}
               aria-current={s.id === selectedId ? "true" : undefined}
+              data-selected={s.id === selectedId || undefined}
               className={cn(
                 "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-muted/60",
                 s.id === selectedId ? "border-primary bg-muted/60" : "border-border bg-card",

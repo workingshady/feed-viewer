@@ -59,7 +59,7 @@ type Upload = { source: SourceDTO; version: VersionDTO };
 
 function RecentUploads({ uploads }: { uploads: Upload[] }) {
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Recent uploads</CardTitle>
         <CardDescription>Newest versions across all sources.</CardDescription>
@@ -76,15 +76,19 @@ function RecentUploads({ uploads }: { uploads: Upload[] }) {
                 <li key={version.id}>
                   <Link
                     to={`/sources?source=${source.id}&tab=versions`}
-                    className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2 text-sm hover:bg-muted/50"
+                    className="block space-y-1 rounded-lg border px-3 py-2 text-sm hover:bg-muted/50"
                   >
-                    <span className="min-w-0 flex-1 truncate font-medium">
-                      {source.name} <span className="font-mono text-muted-foreground">v{version.number}</span>
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate font-medium" title={source.name}>
+                        {source.name} <span className="font-mono text-muted-foreground">v{version.number}</span>
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(version.createdAt)}</span>
                     </span>
-                    <DiffBadges added={version.added} removed={version.removed} changed={version.changed} />
-                    {gate && <GateBadge gate={gate} />}
-                    <span className={`text-xs ${live ? "text-success" : "text-muted-foreground"}`}>{live ? "live" : "not live"}</span>
-                    <span className="w-28 text-right text-xs text-muted-foreground">{timeAgo(version.createdAt)}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <DiffBadges added={version.added} removed={version.removed} changed={version.changed} />
+                      {gate && <GateBadge gate={gate} />}
+                      <span className={`text-xs ${live ? "text-success" : "text-muted-foreground"}`}>{live ? "live" : "not live"}</span>
+                    </span>
                   </Link>
                 </li>
               );
@@ -97,43 +101,67 @@ function RecentUploads({ uploads }: { uploads: Upload[] }) {
 }
 
 function NeedsAttention({ sources }: { sources: SourceDTO[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const LIMIT = 5;
+  // Most urgent first: unhealthy sources, then failing feed checks, then warnings.
   const items = sources
-    .map((s) => ({ s, health: healthOf(s), reasons: healthReasons(s) }))
-    .filter((x) => x.health !== "healthy" || (x.s.versions[0]?.warnings?.checks?.gate ?? "pass") !== "pass");
+    .map((s) => {
+      const gate = s.versions[0]?.warnings?.checks?.gate ?? "pass";
+      const health = healthOf(s);
+      const rank = (health !== "healthy" ? 0 : 3) + (gate === "fail" ? 0 : gate === "warn" ? 1 : 2);
+      return { s, health, gate, reasons: healthReasons(s), rank };
+    })
+    .filter((x) => x.health !== "healthy" || x.gate !== "pass")
+    .sort((a, b) => a.rank - b.rank || a.s.name.localeCompare(b.s.name));
+  const urgent = items.filter((x) => x.health !== "healthy" || x.gate === "fail").length;
+  const warnOnly = items.length - urgent;
+  const visible = expanded ? items : items.slice(0, LIMIT);
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           {items.length ? <AlertTriangle className="h-4 w-4 text-warning" aria-hidden /> : <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />}
           Needs attention
         </CardTitle>
+        {items.length > 0 && (
+          <CardDescription>
+            {urgent ? `${urgent} need action` : "Nothing urgent"}
+            {warnOnly ? ` · ${warnOnly} with feed-check warnings` : ""}
+          </CardDescription>
+        )}
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
           <p className="text-sm text-muted-foreground">Every source is live, current and passing its checks.</p>
         ) : (
-          <ul className="space-y-2">
-            {items.map(({ s, health, reasons }) => {
-              const newest = s.versions[0];
-              const gate = newest?.warnings?.checks?.gate;
-              const lines = [...reasons];
-              if (gate && gate !== "pass") lines.push(`v${newest.number} ${gate === "fail" ? "fails" : "has warnings in"} its feed checks.`);
-              return (
-                <li key={s.id}>
-                  <Link to={`/sources?source=${s.id}&tab=issues`} className="block rounded-lg border px-3 py-2 hover:bg-muted/50">
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <HealthDot health={health} /> {s.name}
-                    </span>
-                    <ul className="mt-1 space-y-0.5 pl-5 text-xs text-muted-foreground">
-                      {lines.map((l) => (
-                        <li key={l}>{l}</li>
-                      ))}
-                    </ul>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <ul className="max-h-[26rem] space-y-1.5 overflow-y-auto overscroll-contain pr-1">
+              {visible.map(({ s, health, gate, reasons }) => {
+                const newest = s.versions[0];
+                const lines = [...reasons];
+                if (gate !== "pass") lines.push(`v${newest.number} ${gate === "fail" ? "fails" : "has warnings in"} its feed checks.`);
+                return (
+                  <li key={s.id}>
+                    <Link to={`/sources?source=${s.id}&tab=issues`} className="flex items-start gap-2 rounded-lg border px-3 py-2 hover:bg-muted/50">
+                      <HealthDot health={health} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{s.name}</span>
+                        <span className="block truncate text-xs text-muted-foreground" title={lines.join(" ")}>
+                          {lines.join(" ")}
+                        </span>
+                      </span>
+                      {gate !== "pass" && <GateBadge gate={gate} className="shrink-0" />}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+            {items.length > LIMIT && (
+              <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => setExpanded((v) => !v)}>
+                {expanded ? `Show top ${LIMIT}` : `Show all ${items.length}`}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

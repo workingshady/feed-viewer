@@ -141,7 +141,7 @@ export default function SourcesPage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-[minmax(260px,340px)_1fr]">
-              <aside className="min-w-0">
+              <aside className="min-w-0 md:sticky md:top-20 md:self-start">
                 <SourceList
                   sources={sources}
                   selectedId={selected?.id ?? null}

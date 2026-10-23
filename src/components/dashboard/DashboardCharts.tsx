@@ -55,7 +55,7 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
         .slice(0, 14)
         .reverse()
         .map(({ s, v }) => ({
-          label: `${s.name.split(/\s+/)[0]} v${v.number}`,
+          label: `${s.name} v${v.number}`,
           name: `${s.name} v${v.number}`,
           added: v.added,
           changed: v.changed,
@@ -108,15 +108,14 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
       </ChartCard>
       <ChartCard
         title="Live inventory by source"
-        description={`Sale and rent listings in each source's live version${
-          inventory.length > TOP_SOURCES ? `; largest ${TOP_SOURCES} of ${inventory.length} (all in the table)` : ""
-        }. Click a bar to open the agency.`}
+        description="Sale and rent listings in each source's live version, largest first. Click a bar to open the agency."
         legend={SALE_RENT}
         className="lg:col-span-2"
         table={{ columns: ["Source", "Sale", "Rent", "Total"], rows: inventory.map((r) => [r.name, r.sale, r.rent, r.total]) }}
       >
         <HBars
-          data={inventory.slice(0, TOP_SOURCES).map(({ name, sale, rent }) => ({ name, sale, rent }))}
+          data={inventory.map(({ name, sale, rent }) => ({ name, sale, rent }))}
+          limit={TOP_SOURCES}
           labelKey="name"
           series={SALE_RENT}
           onSelect={(r) => navigate(`/agencies/${encodeURIComponent(String(r.name))}`)}
