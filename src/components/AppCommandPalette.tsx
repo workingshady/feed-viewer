@@ -14,7 +14,6 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useAppData } from "@/providers/DataProvider";
 import { ACCOUNT_NAV_ITEM, ADMIN_NAV_ITEM, visibleNavGroups, visibleTopNav, type NavItem } from "@/lib/appNav";
 import { COMPARE_UPDATED_EVENT, getCompareListingIds } from "@/lib/compareSelection";
-import { getHomeSectionCommands } from "@/lib/homeSectionUrl";
 import {
   clearRecentListings,
   getRecentListings,
@@ -90,11 +89,6 @@ export function AppCommandPalette() {
 
   const canCompare = compareIds.length >= 2;
 
-  const homeSectionItems = useMemo(
-    () => getHomeSectionCommands(listings.length > 0),
-    [listings.length],
-  );
-
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput placeholder="Search pages and listings…" />
@@ -104,33 +98,11 @@ export function AppCommandPalette() {
           <CommandGroup heading="Account">
             <CommandItem onSelect={() => go("/login")}>
               <LogIn className="mr-2 h-4 w-4 opacity-70" />
-              Login
-            </CommandItem>
-            <CommandItem onSelect={() => go("/signup")}>
-              <UserPlus className="mr-2 h-4 w-4 opacity-70" />
-              Sign up
+              Sign in
             </CommandItem>
           </CommandGroup>
         )}
 
-        <CommandGroup heading="Home — jump to section">
-          {homeSectionItems.map((s) => (
-            <CommandItem
-              key={s.slug}
-              value={`home section ${s.label} ${s.slug} ${s.hint ?? ""}`}
-              onSelect={() => {
-                setOpen(false);
-                navigate(`/?section=${encodeURIComponent(s.slug)}`);
-              }}
-            >
-              <House className="mr-2 h-4 w-4 opacity-70" aria-hidden />
-              {s.label}
-              <CommandShortcut className="opacity-60">
-                {pathname === "/" ? `#${s.slug}` : `/?section=${s.slug}`}
-              </CommandShortcut>
-            </CommandItem>
-          ))}
-        </CommandGroup>
 
         <CommandSeparator />
         <CommandGroup heading="Site">

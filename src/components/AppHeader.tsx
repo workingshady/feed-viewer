@@ -167,7 +167,8 @@ const AppHeader = () => {
   const groups = useMemo(() => (user ? visibleNavGroups(role) : []), [user, role]);
   const accountItems = useMemo(() => (user ? userMenuItems(role) : []), [user, role]);
 
-  const isHome = pathname === "/";
+  // Only the signed-out landing page has a full-bleed hero under a transparent, fixed header.
+  const isHome = pathname === "/" && !user && !isLoading;
   const hero = isHome && !scrolled;
   const signupOpen = useSignupStatus().data?.open ?? false;
   const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || "");

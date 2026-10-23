@@ -4,12 +4,26 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useVersionListings } from "@/hooks/useSources";
 import type { VersionDTO } from "@/lib/sourcesApi";
+import type { Listing } from "@/lib/types";
 import { bedroomMix, priceBands, topValues } from "@/lib/sourceInsights";
 import { BarList } from "./BarList";
 
 /** Market breakdown of the live version: price bands by purpose, bedroom mix, top communities. */
 export function MarketCard({ live }: { live: VersionDTO }) {
   const { data: listings, isLoading } = useVersionListings(live);
+  return <MarketBreakdown listings={listings} isLoading={isLoading} />;
+}
+
+/** Price bands by purpose, bedroom mix and top communities for any set of listings. */
+export function MarketBreakdown({
+  listings,
+  isLoading = false,
+  title = "Market",
+}: {
+  listings: Listing[] | undefined;
+  isLoading?: boolean;
+  title?: string;
+}) {
   const [purpose, setPurpose] = useState<"sale" | "rent">("sale");
 
   const insights = useMemo(() => {
@@ -26,7 +40,7 @@ export function MarketCard({ live }: { live: VersionDTO }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-2">
-        <CardTitle className="text-sm">Market</CardTitle>
+        <CardTitle className="text-sm">{title}</CardTitle>
         <ToggleGroup
           type="single"
           size="sm"
