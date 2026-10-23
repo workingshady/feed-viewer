@@ -1,0 +1,124 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Role {
+  admin
+  editor
+  viewer
+}
+
+enum VersionStatus {
+  ready
+  failed
+}
+
+model User {
+  id           String        @id @default(cuid())
+  username     String        @unique
+  passwordHash String
+  role         Role          @default(viewer)
+  createdAt    DateTime      @default(now())
+  sessions     Session[]
+  prefs        UserPref[]
+  versions     FeedVersion[]
+  auditEvents  AuditEvent[]
+}
+
+model Session {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  username  String
+  ip        String
+  ok        Boolean
+  createdAt DateTime @default(now())
+
+  @@index([username, createdAt])
+  @@index([ip, createdAt])
+}
+
+model Source {
+  id              String        @id @default(cuid())
+  name            String        @unique
+  agencyName      String
+  agencyInfo      Json?
+  /// MappingConfig used to parse this source's feeds; null = auto-detect.
+  mapping         Json?
+  activeVersionId String?       @unique
+  activeVersion   FeedVersion?  @relation("ActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  retainVersions  Int           @default(5)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  versions        FeedVersion[] @relation("SourceVersions")
+}
+
+model FeedVersion {
+  id                 String        @id @default(cuid())
+  sourceId           String
+  source             Source        @relation("SourceVersions", fields: [sourceId], references: [id], onDelete: Cascade)
+  activeFor          Source?       @relation("ActiveVersion")
+  number             Int
+  status             VersionStatus @default(ready)
+  fileName           String
+  fileBytes          Int
+  sha256             String
+  /// Fingerprint of the mapping used to parse; "" = auto-detect. Same file + same mapping = duplicate.
+  mappingFingerprint String        @default("")
+  uploadId           String
+  xmlBlobUrl         String
+  listingsBlobUrl    String
+  listingCount       Int
+  added              Int           @default(0)
+  removed            Int           @default(0)
+  changed            Int           @default(0)
+  warnings           Json?
+  /// Quality metrics computed at upload: { score, photos, permit, coords, description, price, duplicates… }
+  stats              Json?
+  note               String?
+  pinned             Boolean       @default(false)
+  createdById        String?
+  createdBy          User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt          DateTime      @default(now())
+
+  @@unique([sourceId, number])
+  @@unique([sourceId, sha256, mappingFingerprint])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  targetType String
+  targetId   String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model UserPref {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key    String
+  value  Json
+
+  @@id([userId, key])
+}

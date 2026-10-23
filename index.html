@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover: notched devices. Do not disable zoom (a11y). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f0f0f" />
+    <!--
+      Apply the stored theme BEFORE any stylesheet or body content, otherwise the
+      page paints dark (the `class="dark"` default on <html>) and then snaps to
+      light once React mounts.
+
+      This intentionally duplicates a few lines of src/lib/theme.ts — a module
+      import cannot run before the stylesheet. theme.ts stays the source of
+      truth; if the storage key or mode vocabulary changes there, change it here
+      too. Keep it small and ES5: it is render-blocking and not transpiled.
+    -->
+    <script>
+      (function () {
+        try {
+          var KEY = "feedviewer.theme";
+          var mode = null;
+          try {
+            mode = localStorage.getItem(KEY);
+          } catch (e) {
+            /* Storage blocked (private mode / policy) — fall through to default. */
+          }
+          if (mode !== "light" && mode !== "dark" && mode !== "system") {
+            mode = "dark"; // DEFAULT_MODE: never change an existing user's appearance.
+          }
+          var dark;
+          if (mode === "system") {
+            dark = !window.matchMedia || window.matchMedia("(prefers-color-scheme: dark)").matches;
+          } else {
+            dark = mode === "dark";
+          }
+          var root = document.documentElement;
+          root.classList.toggle("dark", dark);
+          root.style.colorScheme = dark ? "dark" : "light";
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", dark ? "#0f0f0f" : "#f6f8f5");
+        } catch (e) {
+          /* Never let theming block the render. */
+        }
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <title>Feed Viewer Pro — real-estate XML feed versions &amp; quality</title>
+    <meta name="description" content="Upload agency XML property feeds, keep every version, compare changes, roll back in one click and track listing quality." />
+    <meta name="theme-color" content="#1D4734" />
+    <meta name="robots" content="noindex" />
+
+    <meta property="og:title" content="Feed Viewer Pro" />
+    <meta property="og:description" content="Real-estate XML feed versions, comparisons and listing quality in one place." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/logo-512.png" />
+    <meta name="twitter:card" content="summary" />
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

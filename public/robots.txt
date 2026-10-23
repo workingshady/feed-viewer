@@ -1,0 +1,3 @@
+# Private tool behind a login — keep it out of search engines.
+User-agent: *
+Disallow: /

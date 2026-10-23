@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Feed Viewer Pro">
+  <rect width="32" height="32" rx="7" fill="#1D4734"/>
+  <path d="M7.5 15.5 16 8l8.5 7.5" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M10 19.5h12" stroke="#7FD8A9" stroke-width="3" stroke-linecap="round"/>
+  <path d="M12 24.5h8" stroke="#FFFFFF" stroke-opacity="0.75" stroke-width="3" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,596 @@
+/*
+  Typography (research-backed, 2024–2026 UI / fintech / “modern luxury” product)
+
+  Comparative notes (web: FontAlternatives SaaS+fintech, Matt Medley UI pairings, fontdiff Manrope↔Sora):
+  - Geist Sans (Vercel): purpose-built for interfaces; ranks with Inter/DM Sans for dashboards; variable-friendly
+    aesthetic, neutral-modern (not classic serif). Self-hosted via Fontsource = fast, privacy-friendly.
+  - Sora: distinct display sans; pairs well with geometric UI sans; avoids “generic Inter-only” luxury tech look.
+  - Geist Mono: same family as body = cohesive code/XML/references; clear digit shapes for data.
+
+  Manrope+Sora (~89% structural similarity per fontdiff) are both excellent; Geist Sans edges Manrope for
+  pure UI density and current product standard. Numerals: lining-nums on body; use Tailwind tabular-nums on tables/prices.
+*/
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  ── Theming ──────────────────────────────────────────────────────────────────
+
+  Three blocks below, in this order:
+    1. `:root`  — theme-independent values (brand ramp, fonts, radius, scrim)
+    2. `:root`  — LIGHT theme values (the default cascade)
+    3. `.dark`  — DARK overrides
+
+  `:root` and `.dark` have equal specificity, so `.dark` MUST stay after the
+  light block — it wins on source order, not weight. Do not reorder.
+
+  `index.html` puts `class="dark"` on <html>, and `src/lib/theme.ts` is the
+  single source of truth for switching it. Dark is the default for users with
+  no stored preference, so this feature never changes an existing user's
+  appearance.
+
+  Palette values are contrast-verified against WCAG AA by
+  `src/lib/themeContrast.test.ts`. Editing a color here without running that
+  test can silently break legibility.
+
+  Design + rationale: docs/superpowers/specs/2026-07-28-light-dark-theme-design.md
+*/
+
+@layer base {
+  /* Respect user zoom; reduce iOS font inflation on orientation change without capping scale */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* ── 1. Theme-independent ── */
+  :root {
+    /* Figma palette (SK Builders / Community) — brand source of truth */
+    --sb-green: 153 42% 20%; /* #1D4734 */
+    --sb-sand: 23 23% 78%; /* #D4C4BA */
+    --sb-rose: 9 27% 72%; /* #CAA9A3 */
+    --sb-slate: 195 17% 59%; /* #849FA8 */
+    --sb-amber: 25 65% 65%; /* #E09B6B */
+    --sb-mist: 108 10% 90%; /* #E4E8E3 */
+
+    --radius: 0.625rem;
+
+    --font-heading: "Sora", system-ui, sans-serif;
+    --font-body: "Geist Sans", system-ui, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+
+    /*
+      Text/icons that sit over photos, hero art, or a saturated brand fill.
+      White in BOTH themes — media does not change colour with the theme, so
+      neither should the text on top of it. Legitimate `text-white` usages
+      become this; use it to signal "white on purpose", not "white by accident".
+    */
+    --on-media: 0 0% 100%;
+
+    /* Overlay gradient over photography. Stays black in both themes. */
+    --scrim: 0 0% 0%;
+  }
+
+  /* ── 2. Light theme (default cascade) ── */
+  :root {
+    color-scheme: light;
+
+    /*
+      Surfaces carry a subtle green tint (hue 108) so light mode reads as this
+      product rather than generic grey. Elevation INVERTS vs dark: higher is
+      lighter. `--card` and `--popover` are both pure white by design — the
+      fourth surface level is expressed by shadow + hairline here, not by
+      lightness. See the spec; this is not a duplicate value to "fix".
+    */
+    --background: 108 14% 97%;
+    --foreground: 158 24% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 158 24% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 158 24% 12%;
+
+    --surface-raised: 0 0% 100%;
+
+    --primary: var(--sb-green);
+    --primary-foreground: 0 0% 100%;
+
+    /*
+      Brand green as TEXT. Distinct from --primary because #1D4734 on the dark
+      background measures 1.86:1 — unreadable. Never use --primary for text;
+      use this. (In light they coincide; in dark this lightens.)
+    */
+    --primary-text: 153 42% 20%;
+
+    /* Amber is the hardest hue to bring to AA on white: 58% L, not 65%. */
+    --secondary: 25 62% 58%;
+    --secondary-foreground: 25 80% 12%;
+    --secondary-text: 25 70% 32%;
+
+    --muted: 108 12% 94%;
+    --muted-foreground: 158 10% 38%;
+
+    --accent: 108 13% 91%;
+    --accent-foreground: 158 24% 12%;
+
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-text: 0 70% 42%;
+
+    --border: 108 10% 86%;
+    --input: 108 10% 86%;
+    --ring: 153 42% 20%;
+
+    /* Replaces the old white-overlay `--listing-frame` ring. */
+    --hairline: 158 20% 12% / 0.05;
+
+    --success: 152 55% 32%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 90% 33%;
+    --warning-foreground: 0 0% 100%;
+
+    --sidebar-background: 108 13% 95%;
+    --sidebar-foreground: 158 24% 12%;
+    --sidebar-primary: var(--sb-green);
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 108 13% 91%;
+    --sidebar-accent-foreground: 158 24% 12%;
+    --sidebar-border: 108 10% 86%;
+    --sidebar-ring: var(--sb-green);
+
+    /* Listing "luxury chrome" accent — sand is too pale for text on white. */
+    --listing-accent: 23 30% 40%;
+    --listing-accent-fg: 158 24% 12%;
+
+    /*
+      Light mode separates by hairline, not depth: black at the dark theme's
+      0.55 opacity reads as grime on a white card. Tint the shadow green.
+    */
+    --shadow-card: 0 1px 2px 0 hsl(158 20% 12% / 0.06), 0 10px 30px -18px hsl(153 42% 20% / 0.14);
+    --shadow-card-hover: 0 2px 4px 0 hsl(158 20% 12% / 0.08), 0 18px 44px -22px hsl(153 42% 20% / 0.2);
+    --shadow-elevated: 0 30px 70px -28px hsl(153 42% 20% / 0.24);
+    --shadow-tint: 158 20% 12%;
+
+    /*
+      Ambient page gradients. Two sets so the listing-detail and dashboard
+      shells keep their distinct strengths (and their exact dark values).
+      On a 97%-light page the dark opacities muddy the surface, so light
+      roughly halves them.
+    */
+    --ambient-detail-1: 0.05;
+    --ambient-detail-2: 0.03;
+    --ambient-detail-3: 0.03;
+    --ambient-dash-1: 0.06;
+    --ambient-dash-2: 0.035;
+    --ambient-dash-3: 0.04;
+
+    /* Charts — darkened for legibility on white. Recharts reads resolved hsl(). */
+    --chart-line: 153 45% 34%;
+    --chart-bar: 153 40% 38%;
+    --chart-grid: 108 10% 88%;
+    --chart-axis: 158 8% 45%;
+    --chart-severity-error: 0 68% 48%;
+    --chart-severity-warning: 32 85% 42%;
+    --chart-severity-info: 153 42% 36%;
+    --chart-neutral: 195 20% 42%;
+
+    --chart-tooltip-surface: var(--popover);
+    --chart-tooltip-border: var(--border);
+    --chart-tooltip-title: var(--foreground);
+    --chart-tooltip-body: var(--muted-foreground);
+    --chart-tooltip-value: var(--foreground);
+    --chart-tooltip-shadow: 0 18px 50px -14px hsl(158 20% 12% / 0.16), 0 0 0 1px hsl(108 10% 86%);
+
+    --selection-bg: 153 42% 20% / 0.18;
+    --selection-fg: 158 24% 12%;
+  }
+
+  /* ── 3. Dark theme (must stay after light — equal specificity, source order wins) ── */
+  .dark {
+    color-scheme: dark;
+
+    --background: 0 0% 6%;
+    --foreground: var(--sb-mist);
+
+    --card: 0 0% 9%;
+    --card-foreground: var(--sb-mist);
+
+    --popover: 0 0% 10%;
+    --popover-foreground: var(--sb-mist);
+
+    --surface-raised: 0 0% 10%;
+
+    --primary: var(--sb-green);
+    --primary-foreground: 0 0% 100%;
+
+    /* Lightened: the brand green itself is 1.86:1 here — unreadable as text. */
+    --primary-text: 153 45% 62%;
+
+    --secondary: var(--sb-amber);
+    --secondary-foreground: 0 0% 10%;
+    --secondary-text: var(--sb-amber);
+
+    --muted: 0 0% 12%;
+    --muted-foreground: 0 0% 70%;
+
+    --accent: 0 0% 14%;
+    --accent-foreground: var(--sb-mist);
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    /* The fill colour itself is only 3.74:1 on --card here — lighten for text. */
+    --destructive-text: 0 82% 70%;
+
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 153 45% 62%;
+
+    --hairline: 0 0% 100% / 0.06;
+
+    --success: 152 60% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+
+    --sidebar-background: 0 0% 7%;
+    --sidebar-foreground: var(--sb-mist);
+    --sidebar-primary: var(--sb-green);
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 12%;
+    --sidebar-accent-foreground: var(--sb-mist);
+    --sidebar-border: 0 0% 16%;
+    --sidebar-ring: var(--sb-green);
+
+    --listing-accent: var(--sb-sand);
+    --listing-accent-fg: 0 0% 98%;
+
+    --shadow-card: 0 1px 2px 0 hsl(0 0% 0% / 0.55), 0 10px 40px -20px hsl(153 42% 10% / 0.28);
+    --shadow-card-hover: 0 2px 3px 0 hsl(0 0% 0% / 0.6), 0 18px 60px -26px hsl(153 42% 10% / 0.45);
+    --shadow-elevated: 0 30px 90px -30px hsl(153 42% 10% / 0.55);
+    --shadow-tint: 0 0% 0%;
+
+    --ambient-detail-1: 0.1;
+    --ambient-detail-2: 0.06;
+    --ambient-detail-3: 0.06;
+    --ambient-dash-1: 0.12;
+    --ambient-dash-2: 0.07;
+    --ambient-dash-3: 0.08;
+
+    --chart-line: 153 42% 52%;
+    --chart-bar: 153 38% 46%;
+    --chart-grid: 0 0% 22%;
+    --chart-axis: 0 0% 52%;
+    --chart-severity-error: 0 72% 58%;
+    --chart-severity-warning: 38 88% 54%;
+    --chart-severity-info: 153 40% 50%;
+    --chart-neutral: 195 17% 52%;
+
+    --chart-tooltip-surface: var(--popover);
+    --chart-tooltip-border: var(--border);
+    --chart-tooltip-title: var(--foreground);
+    --chart-tooltip-body: var(--muted-foreground);
+    --chart-tooltip-value: var(--foreground);
+    --chart-tooltip-shadow: 0 18px 50px -14px hsl(0 0% 0% / 0.62), 0 0 0 1px hsl(153 42% 24% / 0.38);
+
+    --selection-bg: 153 42% 20% / 0.55;
+    --selection-fg: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    /* Native scrolling: global smooth scroll fights wheel/trackpad input and feels laggy */
+    scroll-behavior: auto;
+    /* Fixed header (~80px) + sticky section nav — aligns with section scroll-mt */
+    scroll-padding-top: 8rem;
+    overscroll-behavior-y: contain;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-padding-top: 6.5rem;
+    }
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    overscroll-behavior-y: contain;
+    /* Lining figures: even height for 0–9 in UI copy; easier on the eye than old-style numerals */
+    font-variant-numeric: lining-nums;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-variant-numeric: lining-nums;
+  }
+
+  code, kbd, samp, pre {
+    font-family: var(--font-mono);
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.35); border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.55); }
+
+  /* Selection */
+  ::selection { background: hsl(var(--selection-bg)); color: hsl(var(--selection-fg)); }
+
+  /*
+    Chrome/Safari autofill paints its own background, overriding any bg utility
+    on the input. The only reliable override is an inset box-shadow, so restate
+    the themed surface here or autofilled fields flash pale-yellow in dark mode
+    and stay grey-blue in light.
+  */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-text-fill-color: hsl(var(--foreground));
+    -webkit-box-shadow: 0 0 0 1000px hsl(var(--background)) inset;
+    box-shadow: 0 0 0 1000px hsl(var(--background)) inset;
+    caret-color: hsl(var(--foreground));
+    transition: background-color 9999s ease-out 0s;
+  }
+
+  /*
+    Windows High Contrast / forced-colors: yield to the OS palette instead of
+    fighting it. Primary dev target is Windows 11, where this is reachable.
+  */
+  @media (forced-colors: active) {
+    * {
+      border-color: CanvasText;
+    }
+    ::selection {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+
+  /*
+    Print: always light. Printing the dark theme wastes ink and is unreadable.
+    Force the light tokens regardless of the active class, and drop ambient
+    gradients and shadows which render as grey mud.
+  */
+  @media print {
+    :root, .dark {
+      color-scheme: light;
+      --background: 0 0% 100%;
+      --foreground: 0 0% 0%;
+      --card: 0 0% 100%;
+      --card-foreground: 0 0% 0%;
+      --popover: 0 0% 100%;
+      --popover-foreground: 0 0% 0%;
+      --surface-raised: 0 0% 100%;
+      --muted: 0 0% 96%;
+      --muted-foreground: 0 0% 28%;
+      --accent: 0 0% 94%;
+      --accent-foreground: 0 0% 0%;
+      --border: 0 0% 75%;
+      --input: 0 0% 75%;
+      --primary-text: 153 42% 20%;
+      --hairline: 0 0% 0% / 0.12;
+      --shadow-card: none;
+      --shadow-card-hover: none;
+      --shadow-elevated: none;
+      --ambient-detail-1: 0;
+      --ambient-detail-2: 0;
+      --ambient-detail-3: 0;
+      --ambient-dash-1: 0;
+      --ambient-dash-2: 0;
+      --ambient-dash-3: 0;
+    }
+    .listing-luxury-scope.listing-detail-page::before,
+    .dashboard-page::before {
+      display: none;
+    }
+  }
+}
+
+@layer components {
+  /* ── Property card ── */
+  .property-card {
+    @apply bg-card rounded-2xl overflow-hidden transition-all duration-300 border border-border hover:border-primary/30;
+    box-shadow: var(--shadow-card);
+  }
+  .property-card:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-3px);
+  }
+
+  /* ── Purpose badges ── */
+  /* Brand fills: intentionally the same in both themes (they sit on photos too). */
+  .badge-sale  { @apply bg-[#1D4734] text-on-media rounded-full px-3 py-0.5 text-xs font-bold; }
+  .badge-rent  { @apply bg-[#E09B6B] text-[#0f0f0f] rounded-full px-3 py-0.5 text-xs font-bold; }
+  .badge-new   { @apply bg-emerald-500 text-on-media rounded-full px-3 py-0.5 text-xs font-bold; }
+
+  /* ── Stat card ── */
+  .stat-card {
+    @apply bg-card rounded-2xl p-6 border border-border;
+    box-shadow: var(--shadow-card);
+  }
+  .stat-card:hover { @apply border-primary/20; }
+
+  /* ── Page shell ── */
+  .page-shell { @apply min-h-screen bg-background; }
+
+  /* ── Section heading ── */
+  .section-eyebrow {
+    @apply text-[10px] text-muted-foreground uppercase tracking-widest font-semibold mb-2;
+  }
+
+  /* ── Surface card (legacy name: predates theming, used app-wide) ── */
+  .dark-card {
+    @apply bg-card border border-border rounded-2xl;
+  }
+
+  /* ── Premium table ── */
+  .premium-table { @apply w-full text-sm; }
+  .premium-table thead th {
+    @apply text-left font-semibold text-muted-foreground text-xs uppercase tracking-widest px-4 py-3 bg-muted/40 border-b border-border;
+  }
+  .premium-table tbody tr { @apply border-b border-border/60 hover:bg-accent/50 transition-colors; }
+  .premium-table tbody td { @apply px-4 py-3 text-foreground/80; }
+  .premium-table tbody tr:last-child { @apply border-0; }
+
+  /* ── Input (legacy name: predates theming, used app-wide) ── */
+  .dark-input {
+    @apply bg-background border border-border text-foreground placeholder:text-muted-foreground/70 rounded-xl h-10 px-4 text-sm focus:border-primary/40 focus:outline-none focus:ring-0;
+  }
+
+  /* ── Pill badge ── */
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-semibold border;
+  }
+  /* Text colours go through --primary-text / --secondary-text: the raw brand
+     green and amber both fail AA as text on one of the two themes. */
+  .pill-green  { @apply bg-primary/15 border-primary/25 text-primary-text; }
+  .pill-amber  { @apply bg-secondary/15 border-secondary/25 text-secondary-text; }
+  .pill-white  { @apply bg-muted border-border text-muted-foreground; }
+  .pill-yellow { @apply bg-yellow-500/10 border-yellow-500/25 text-yellow-700 dark:text-yellow-400; }
+  .pill-red    { @apply bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-400; }
+
+  /* ── Listing luxury chrome (card + detail) ── */
+  /* --listing-accent / --listing-accent-fg come from the theme blocks. */
+  .listing-luxury-scope .listing-eyebrow {
+    @apply text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground;
+  }
+  .listing-luxury-scope .listing-eyebrow-accent {
+    color: hsl(var(--listing-accent) / 0.85);
+  }
+  .listing-luxury-scope .listing-hairline {
+    @apply h-px bg-gradient-to-r from-transparent via-border to-transparent;
+  }
+  .listing-luxury-scope .listing-stat-pill {
+    @apply rounded-xl bg-accent/80 border border-border/80 px-2.5 py-1.5 min-w-0 flex-1 flex items-center justify-center gap-1.5;
+  }
+
+  /* Listing detail page: ambient background + unified section chrome */
+  .listing-luxury-scope.listing-detail-page {
+    @apply relative;
+  }
+  .listing-luxury-scope.listing-detail-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 90% 55% at 50% -12%, hsl(var(--primary) / var(--ambient-detail-1)), transparent 58%),
+      radial-gradient(ellipse 50% 40% at 100% 18%, hsl(var(--secondary) / var(--ambient-detail-2)), transparent 50%),
+      radial-gradient(ellipse 45% 35% at 0% 75%, hsl(var(--sb-slate) / var(--ambient-detail-3)), transparent 55%);
+  }
+  .listing-luxury-scope.listing-detail-page > * {
+    position: relative;
+    z-index: 1;
+  }
+  .listing-luxury-scope .listing-detail-hero-card {
+    @apply relative overflow-hidden rounded-2xl border border-border/80 bg-gradient-to-br from-card via-card to-muted/[0.35] ring-1 ring-[hsl(var(--hairline))];
+    box-shadow: var(--shadow-card);
+  }
+  .listing-luxury-scope .listing-detail-hero-card::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.9), hsl(var(--secondary) / 0.65));
+    opacity: 0.92;
+  }
+  .listing-luxury-scope .listing-detail-section-card {
+    @apply rounded-2xl border border-border/90 bg-card/90 ring-1 ring-[hsl(var(--hairline))];
+    box-shadow: var(--shadow-card);
+  }
+  .listing-luxury-scope .listing-detail-jump-nav {
+    @apply rounded-2xl border border-border/60 bg-card/70 backdrop-blur-md ring-1 ring-[hsl(var(--hairline))];
+    box-shadow: 0 4px 16px -6px hsl(var(--shadow-tint) / 0.18);
+    border-left-width: 4px;
+    border-left-color: hsl(var(--primary) / 0.35);
+    /* Avoid subpixel width jitter when sticky + backdrop-blur repaint */
+    backface-visibility: hidden;
+  }
+
+  /* ── Dashboard shells (account, admin, analytics headers) ── */
+  .dashboard-page {
+    @apply relative min-h-screen bg-background;
+  }
+
+  .dashboard-page::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(ellipse 90% 55% at 50% -8%, hsl(var(--primary) / var(--ambient-dash-1)), transparent 58%),
+      radial-gradient(ellipse 50% 40% at 100% 20%, hsl(var(--secondary) / var(--ambient-dash-2)), transparent 50%),
+      radial-gradient(ellipse 45% 35% at 0% 80%, hsl(var(--sb-slate) / var(--ambient-dash-3)), transparent 55%);
+  }
+
+  .dashboard-page > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .dashboard-card {
+    @apply rounded-2xl border border-border bg-card text-card-foreground;
+    box-shadow: var(--shadow-card);
+  }
+
+  .dashboard-card--accent {
+    @apply border-primary/20 bg-gradient-to-br from-card via-card to-primary/[0.06];
+  }
+
+  .dashboard-metric-card {
+    @apply relative overflow-hidden rounded-2xl border border-border bg-card text-card-foreground;
+    box-shadow: var(--shadow-card);
+  }
+
+  .dashboard-metric-card::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.95), hsl(var(--secondary) / 0.75));
+    opacity: 0.9;
+  }
+
+  .dashboard-tabs-list {
+    @apply flex h-auto flex-wrap gap-1 p-1 rounded-xl border;
+    background: hsl(var(--primary) / 0.07);
+    border-color: hsl(var(--primary) / 0.16);
+  }
+
+  .dashboard-tabs-list [data-state="active"] {
+    @apply rounded-lg text-foreground shadow-none;
+    background: hsl(var(--primary) / 0.15);
+    border: 1px solid hsl(var(--primary) / 0.28);
+  }
+
+  .dashboard-page-title {
+    @apply text-3xl font-extrabold font-heading tracking-tight text-foreground;
+    text-shadow: 0 1px 24px hsl(var(--primary) / 0.12);
+  }
+
+  .dashboard-eyebrow {
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+  }
+}

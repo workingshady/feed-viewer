@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: feed-viewer-pro-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: feed_viewer_pro
+      POSTGRES_USER: postgres
+      # Set POSTGRES_PASSWORD in .env (docker compose reads it automatically).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - feed_viewer_pro_pgdata:/var/lib/postgresql/data
+
+volumes:
+  feed_viewer_pro_pgdata:
