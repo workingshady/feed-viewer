@@ -1,7 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
-import { ChartCard, Columns, HBars, Meter, SERIES, type SeriesDef } from "@/components/charts/ChartKit";
+import { AlertCircle, AlertTriangle, ChevronDown, Info } from "lucide-react";
+import { ChartCard, Columns, Donut, HBars, Heatmap, Meter, SERIES, type SeriesDef } from "@/components/charts/ChartKit";
+import { AGENT_FIELDS, agentFieldCoverage, agentIssues, agentSpecialisation, type AgentIssue } from "@/lib/agentDataQuality";
+import { cn } from "@/lib/utils";
 import type { AgentSummary } from "@/components/AgentCard";
 import { summarizeAgents } from "@/components/AgentCard";
 import { formatPriceCompact } from "@/lib/displayPrice";
@@ -73,6 +76,7 @@ export function AgentsDashboard({
           topShare: assigned ? (team[0].count / assigned) * 100 : 0,
           topAgent: team[0]?.name ?? "",
           perAgent: team.length ? assigned / team.length : 0,
+          coverage: agentFieldCoverage(team),
         };
       })
       .sort((a, b) => b.agents - a.agents);
@@ -93,6 +97,9 @@ export function AgentsDashboard({
       contact: { phone: share((l) => !!l.agent.phone?.trim()), email: share((l) => !!l.agent.email?.trim()), photo: share((l) => !!l.agent.photo?.trim()) },
       agencies,
       priced,
+      coverage: agentFieldCoverage(agents),
+      issues: agentIssues(agents),
+      spec: agentSpecialisation(agents),
     };
   }, [agents, listings, listingsByAgency, agencyNames]);
 
@@ -100,11 +107,17 @@ export function AgentsDashboard({
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="Agents" value={d.people.toLocaleString()} hint={d.agencyAccounts ? `+ ${d.agencyAccounts} agency account(s)` : "people with listings"} />
         <Stat label="Listings per agent" value={d.avg.toFixed(1)} hint="average" />
         <Stat label="Largest share" value={pct(d.topShare * 100)} hint={d.topName} />
+        <Stat label="With licence (BRN)" value={pct(d.coverage.licenseNo * 100)} hint="of agents" />
         <Stat label="Listings without agent" value={d.unassigned.toLocaleString()} hint={`of ${listings.length.toLocaleString()}`} />
+        <Stat
+          label="Agent data issues"
+          value={d.issues.filter((i) => i.severity !== "info").reduce((n, i) => n + i.agents.length, 0).toLocaleString()}
+          hint="errors and warnings"
+        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -126,24 +139,73 @@ export function AgentsDashboard({
             <Columns data={d.load} xKey="label" series={[{ key: "count", label: "Agents", color: SERIES[0] }]} height={180} />
           </ChartCard>
           <ChartCard
-            title="Agent contact on listings"
-            table={{
-              columns: ["Field", "% of listings"],
-              rows: [
-                ["Phone", Math.round(d.contact.phone * 100)],
-                ["Email", Math.round(d.contact.email * 100)],
-                ["Photo", Math.round(d.contact.photo * 100)],
-              ],
-            }}
+            title="Profile completeness"
+            description="Share of agents with each field filled."
+            table={{ columns: ["Field", "% of agents"], rows: AGENT_FIELDS.map((f) => [f.label, Math.round(d.coverage[f.key] * 100)]) }}
           >
             <div className="space-y-3">
-              <Meter label="Phone" value={d.contact.phone} />
-              <Meter label="Email" value={d.contact.email} />
-              <Meter label="Photo" value={d.contact.photo} />
+              {AGENT_FIELDS.map((f) => (
+                <Meter key={f.key} label={f.label} value={d.coverage[f.key]} />
+              ))}
+              <p className="text-[11px] text-muted-foreground">
+                On listings: phone {pct(d.contact.phone * 100)} · email {pct(d.contact.email * 100)} · photo {pct(d.contact.photo * 100)}
+              </p>
             </div>
           </ChartCard>
         </div>
       </div>
+
+      <div className="grid items-start gap-6 lg:grid-cols-3">
+        <ChartCard
+          title="Agent data issues"
+          description="Problems in agent profiles that portals reject or that lose leads. Open a row to see who."
+          className="lg:col-span-2"
+          table={{
+            columns: ["Issue", "Severity", "Agents", "Names"],
+            rows: d.issues.map((i) => [i.label, i.severity, i.agents.length, i.agents.join(" | ")]),
+          }}
+        >
+          <IssueList issues={d.issues} onAgent={(n) => navigate(profileHref(n))} />
+        </ChartCard>
+        <ChartCard
+          title="Sale or rent focus"
+          table={{
+            columns: ["Focus", "Agents"],
+            rows: [
+              ["Sale only", d.spec.sale],
+              ["Rent only", d.spec.rent],
+              ["Both", d.spec.both],
+            ],
+          }}
+        >
+          <Donut
+            centerLabel="agents"
+            data={[
+              { label: "Sale only", value: d.spec.sale, color: SERIES[0] },
+              { label: "Rent only", value: d.spec.rent, color: SERIES[1] },
+              { label: "Both", value: d.spec.both, color: SERIES[2] },
+            ]}
+          />
+        </ChartCard>
+      </div>
+
+      {allAgencies && d.agencies.length > 1 && (
+        <ChartCard
+          title="Profile completeness by agency"
+          description="Share of each agency's agents with the field filled. Click an agency to open it."
+          table={{
+            columns: ["Agency", ...AGENT_FIELDS.map((f) => f.label)],
+            rows: d.agencies.map((a) => [a.name, ...AGENT_FIELDS.map((f) => Math.round(a.coverage[f.key] * 100))]),
+          }}
+        >
+          <Heatmap
+            rows={d.agencies.map((a) => a.name)}
+            columns={AGENT_FIELDS.map((f) => ({ key: f.key, label: f.label }))}
+            value={(row, col) => d.agencies.find((a) => a.name === row)?.coverage[col as keyof typeof d.coverage] ?? null}
+            onRow={(n) => navigate(`/agencies/${encodeURIComponent(n)}`)}
+          />
+        </ChartCard>
+      )}
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
         {allAgencies && d.agencies.length > 1 && (
@@ -180,5 +242,57 @@ export function AgentsDashboard({
         </ChartCard>
       </div>
     </div>
+  );
+}
+
+const SEVERITY = {
+  error: { icon: AlertCircle, cls: "text-destructive-text", label: "Error" },
+  warning: { icon: AlertTriangle, cls: "text-warning", label: "Warning" },
+  info: { icon: Info, cls: "text-muted-foreground", label: "Info" },
+} as const;
+
+function IssueList({ issues, onAgent }: { issues: AgentIssue[]; onAgent: (name: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (!issues.length) return <p className="py-6 text-center text-sm text-muted-foreground">No agent data issues found.</p>;
+  return (
+    <ul className="divide-y rounded-md border">
+      {issues.map((i) => {
+        const S = SEVERITY[i.severity];
+        const isOpen = open === i.key;
+        return (
+          <li key={i.key}>
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-muted/50"
+              aria-expanded={isOpen}
+              onClick={() => setOpen(isOpen ? null : i.key)}
+            >
+              <S.icon className={cn("h-4 w-4 shrink-0", S.cls)} aria-label={S.label} />
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">{i.label}</span>
+                <span className="block truncate text-xs text-muted-foreground">{i.hint}</span>
+              </span>
+              <span className="font-mono tabular-nums">{i.agents.length}</span>
+              <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
+            </button>
+            {isOpen && (
+              <div className="flex flex-wrap gap-1.5 px-3 pb-3 pl-10">
+                {i.agents.slice(0, 60).map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => onAgent(n)}
+                    className="rounded-md border px-2 py-0.5 text-xs hover:border-primary/50 hover:bg-muted/50"
+                  >
+                    {n}
+                  </button>
+                ))}
+                {i.agents.length > 60 && <span className="text-xs text-muted-foreground">+{i.agents.length - 60} more in the CSV</span>}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

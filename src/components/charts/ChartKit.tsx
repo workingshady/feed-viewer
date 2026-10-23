@@ -8,10 +8,16 @@ import {
   LabelList,
   Line,
   LineChart,
+  Pie,
+  PieChart,
+  ReferenceLine,
+  Scatter,
+  ScatterChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
+  ZAxis,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -69,7 +75,7 @@ export function ChartCard({
   const [asTable, setAsTable] = useState(false);
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return (
-    <Card className={cn("flex flex-col", className)}>
+    <Card className={cn("flex min-w-0 flex-col", className)}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
         <div className="min-w-0 space-y-1">
           <CardTitle className="text-sm">{title}</CardTitle>
@@ -206,12 +212,15 @@ export function Columns<T extends Record<string, string | number>>({
   valueFormat = fmt,
   colorFor,
   onSelect,
+  grouped = false,
 }: {
   data: T[];
   xKey: keyof T & string;
   series: SeriesDef[];
   height?: number;
   valueFormat?: (n: number) => string;
+  /** Side-by-side bars instead of stacked (compare series within a category). */
+  grouped?: boolean;
   /** Per-bar colour for single-series charts (e.g. score bands). */
   colorFor?: (row: T) => string;
   onSelect?: (row: T) => void;
@@ -220,21 +229,22 @@ export function Columns<T extends Record<string, string | number>>({
   const last = series.length - 1;
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }} barCategoryGap="18%">
+      <BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -12 }} barCategoryGap="18%" stackOffset="sign">
         <CartesianGrid vertical={false} stroke={GRID} />
         <XAxis dataKey={xKey} tick={AXIS} axisLine={{ stroke: GRID }} tickLine={false} interval="preserveStartEnd" minTickGap={8} />
         <YAxis tick={AXIS} axisLine={false} tickLine={false} allowDecimals={false} tickFormatter={valueFormat} />
-        <Tooltip {...RECHARTS_TOOLTIP_PROPS} cursor={RECHARTS_BAR_CURSOR} formatter={(v: number) => valueFormat(v)} />
+        <Tooltip {...RECHARTS_TOOLTIP_PROPS} cursor={RECHARTS_BAR_CURSOR} formatter={(v: number) => valueFormat(Math.abs(v))} />
+        <ReferenceLine y={0} stroke="hsl(var(--border))" />
         {series.map((s, i) => (
           <Bar
             key={s.key}
             dataKey={s.key}
             name={s.label}
-            stackId="a"
+            stackId={grouped ? undefined : "a"}
             fill={s.color}
             stroke="hsl(var(--card))"
             strokeWidth={1}
-            radius={i === last ? [4, 4, 0, 0] : 0}
+            radius={grouped || i === last ? [4, 4, 0, 0] : 0}
             maxBarSize={36}
             onClick={onSelect ? (_d: unknown, idx: number) => onSelect(data[idx]) : undefined}
             className={onSelect ? "cursor-pointer" : undefined}
@@ -301,6 +311,209 @@ export function Meter({ label, value, hint }: { label: string; value: number; hi
       <div className="h-1.5 overflow-hidden rounded-full bg-muted" title={hint}>
         <div className="h-full rounded-full" style={{ width: `${pct}%`, background: SERIES[0] }} />
       </div>
+    </div>
+  );
+}
+
+/** Part-to-whole for a few categories (≤ 5): ring with the total in the middle. */
+export function Donut({
+  data,
+  valueFormat = fmt,
+  centerLabel = "total",
+}: {
+  data: { label: string; value: number; color: string }[];
+  valueFormat?: (n: number) => string;
+  centerLabel?: string;
+}) {
+  const total = data.reduce((n, d) => n + d.value, 0);
+  if (!total) return <EmptyChart />;
+  return (
+    <div className="flex flex-wrap items-center gap-6">
+      <div className="relative h-44 w-44 shrink-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="value"
+              nameKey="label"
+              innerRadius="68%"
+              outerRadius="100%"
+              stroke="hsl(var(--card))"
+              strokeWidth={2}
+              isAnimationActive={false}
+            >
+              {data.map((d) => (
+                <Cell key={d.label} fill={d.color} />
+              ))}
+            </Pie>
+            <Tooltip {...RECHARTS_TOOLTIP_PROPS} formatter={(v: number) => valueFormat(v)} />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-mono text-lg font-semibold tabular-nums">{valueFormat(total)}</span>
+          <span className="text-[11px] text-muted-foreground">{centerLabel}</span>
+        </div>
+      </div>
+      <ul className="min-w-0 flex-1 space-y-2 text-sm">
+        {data.map((d) => (
+          <li key={d.label} className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: d.color }} aria-hidden />
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{d.label}</span>
+            <span className="font-mono tabular-nums">{valueFormat(d.value)}</span>
+            <span className="w-10 text-right text-xs text-muted-foreground">{Math.round((d.value / total) * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Relationship between two measures (e.g. size vs price). Log axes suit property prices. */
+export function ScatterPlot<T extends Record<string, string | number>>({
+  data,
+  x,
+  y,
+  color = SERIES[0],
+  height = 260,
+  log = true,
+  onSelect,
+  tooltipLabel,
+}: {
+  data: T[];
+  x: { key: keyof T & string; label: string; format?: (n: number) => string };
+  y: { key: keyof T & string; label: string; format?: (n: number) => string };
+  color?: string;
+  height?: number;
+  log?: boolean;
+  onSelect?: (row: T) => void;
+  tooltipLabel?: (row: T) => string;
+}) {
+  if (!data.length) return <EmptyChart />;
+  const xf = x.format ?? fmt;
+  const yf = y.format ?? fmt;
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <ScatterChart margin={{ top: 8, right: 12, bottom: 16, left: -4 }}>
+        <CartesianGrid stroke={GRID} />
+        <XAxis
+          type="number"
+          dataKey={x.key}
+          name={x.label}
+          scale={log ? "log" : "auto"}
+          domain={["auto", "auto"]}
+          tick={AXIS}
+          tickFormatter={xf}
+          axisLine={{ stroke: GRID }}
+          tickLine={false}
+          label={{ value: x.label, position: "insideBottom", offset: -10, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+        />
+        <YAxis
+          type="number"
+          dataKey={y.key}
+          name={y.label}
+          scale={log ? "log" : "auto"}
+          domain={["auto", "auto"]}
+          tick={AXIS}
+          tickFormatter={yf}
+          axisLine={false}
+          tickLine={false}
+          width={56}
+        />
+        <ZAxis range={[28, 28]} />
+        <Tooltip
+          cursor={{ strokeDasharray: "3 3" }}
+          content={({ payload }) => {
+            const row = payload?.[0]?.payload as T | undefined;
+            if (!row) return null;
+            return (
+              <div style={RECHARTS_TOOLTIP_PROPS.contentStyle}>
+                {tooltipLabel && <div style={RECHARTS_TOOLTIP_PROPS.labelStyle}>{tooltipLabel(row)}</div>}
+                <div style={RECHARTS_TOOLTIP_PROPS.itemStyle}>
+                  {x.label}: {xf(Number(row[x.key]))}
+                </div>
+                <div style={RECHARTS_TOOLTIP_PROPS.itemStyle}>
+                  {y.label}: {yf(Number(row[y.key]))}
+                </div>
+              </div>
+            );
+          }}
+        />
+        <Scatter
+          data={data}
+          fill={color}
+          fillOpacity={0.55}
+          isAnimationActive={false}
+          onClick={onSelect ? (d: { payload: T }) => onSelect(d.payload) : undefined}
+          className={onSelect ? "cursor-pointer" : undefined}
+        />
+      </ScatterChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Matrix of 0–1 values (rows × columns), one hue light→dark. Every cell prints its value,
+ * so colour is a reading aid, never the only carrier.
+ */
+export function Heatmap({
+  rows,
+  columns,
+  value,
+  format = (v) => `${Math.round(v * 100)}%`,
+  onRow,
+}: {
+  rows: string[];
+  columns: { key: string; label: string }[];
+  value: (row: string, col: string) => number | null;
+  format?: (v: number) => string;
+  onRow?: (row: string) => void;
+}) {
+  if (!rows.length) return <EmptyChart />;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-separate border-spacing-0.5 text-xs">
+        <thead>
+          <tr>
+            <th />
+            {columns.map((c) => (
+              <th key={c.key} className="px-1 pb-1 text-center font-normal leading-tight text-muted-foreground">
+                {c.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r}>
+              <th scope="row" className="max-w-40 truncate pr-2 text-left font-normal text-muted-foreground">
+                {onRow ? (
+                  <button type="button" className="truncate hover:text-foreground hover:underline" onClick={() => onRow(r)}>
+                    {r}
+                  </button>
+                ) : (
+                  r
+                )}
+              </th>
+              {columns.map((c) => {
+                const v = value(r, c.key);
+                const strong = v != null && v >= 0.55;
+                return (
+                  <td
+                    key={c.key}
+                    className={cn("h-8 min-w-12 rounded text-center font-mono tabular-nums", strong ? "text-white" : "text-foreground")}
+                    style={{
+                      background:
+                        v == null ? "hsl(var(--muted))" : `color-mix(in oklab, var(--series-1) ${Math.round(8 + v * 82)}%, hsl(var(--card)))`,
+                    }}
+                  >
+                    {v == null ? "—" : format(v)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

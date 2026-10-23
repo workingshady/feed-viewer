@@ -12,6 +12,10 @@ export type AgentSummary = {
   photo: string;
   phone: string;
   email: string;
+  /** Broker licence (RERA BRN), agent id and info line, when the feed provides them. */
+  licenseNo: string;
+  agentId: string;
+  info: string;
   count: number;
   sale: number;
   rent: number;
@@ -46,6 +50,9 @@ export function summarizeAgents(listings: Listing[], agencyNames: string[] = [])
         photo: "",
         phone: "",
         email: "",
+        licenseNo: "",
+        agentId: "",
+        info: "",
         count: 0,
         sale: 0,
         rent: 0,
@@ -67,6 +74,9 @@ export function summarizeAgents(listings: Listing[], agencyNames: string[] = [])
     a.photo ||= l.agent.photo ?? "";
     a.phone ||= l.agent.phone ?? "";
     a.email ||= l.agent.email ?? "";
+    a.licenseNo ||= l.agent.licenseNo?.trim() ?? "";
+    a.agentId ||= l.agent.id?.trim() ?? "";
+    a.info ||= l.agent.info?.trim() ?? "";
     if (!l.agent.phone?.trim()) a.missingPhone++;
     if (!l.agent.email?.trim()) a.missingEmail++;
     const c = l.community?.trim();
@@ -120,6 +130,7 @@ export function AgentCard({ agent, href }: { agent: AgentSummary; href: string }
             <span className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">{agent.count}</span>
           </div>
           {agent.isAgencyAccount && <p className="text-xs text-warning">Agency account, not a person</p>}
+          {agent.licenseNo && <p className="font-mono text-[11px] text-muted-foreground">BRN {agent.licenseNo}</p>}
           <p className="truncate text-xs text-muted-foreground">{agent.topCommunities.join(" · ") || "—"}</p>
           <p className="text-xs text-muted-foreground">
             {agent.sale} sale · {agent.rent} rent

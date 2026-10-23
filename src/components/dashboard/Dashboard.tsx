@@ -264,7 +264,7 @@ export function Dashboard() {
             </div>
 
             <SourceCharts sources={sources} />
-            <ListingCharts listings={listings} />
+            <ListingCharts listings={listings} sources={sources} />
             <SourceComparisonTable sources={sources} />
             <NewestListings listings={listings} />
 
