@@ -20,6 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { SourceComparisonTable } from "@/components/SourceComparisonTable";
 import { SourcePicker } from "@/components/SourcePicker";
 import { ListingCharts, SourceCharts } from "./DashboardCharts";
+import { ImportReadiness } from "./ImportReadiness";
 import { DiffBadges } from "@/components/sources/VersionRow";
 import { HealthDot, healthOf, healthReasons } from "@/components/sources/health";
 import { timeAgo } from "@/components/sources/format";
@@ -262,6 +263,8 @@ export function Dashboard() {
               <NeedsAttention sources={sources} />
               <RecentUploads uploads={uploads} />
             </div>
+
+            <ImportReadiness sources={sources} listings={listings} />
 
             <SourceCharts sources={sources} />
             <ListingCharts listings={listings} sources={sources} />

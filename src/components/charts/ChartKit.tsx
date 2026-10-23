@@ -143,7 +143,7 @@ export function ChartCard({
 }) {
   const [asTable, setAsTable] = useState(false);
   return (
-    <Card className={cn("flex flex-col", className)}>
+    <Card className={cn("flex min-w-0 flex-col", className)}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
         <div className="min-w-0 space-y-1">
           <CardTitle className="text-sm">{title}</CardTitle>
