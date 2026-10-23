@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowRight, Info, XCircle } from "lucide-react";
 import { ChartCard } from "@/components/charts/ChartKit";
@@ -53,7 +54,10 @@ export function ImportReadiness({ sources, listings }: { sources: SourceDTO[]; l
       .sort((a, b) => a.forecast.publishable / a.total - b.forecast.publishable / b.total);
   }, [sources, listings]);
 
+  const [showAll, setShowAll] = useState(false);
   if (!rows.length) return null;
+  // Lowest expected share first; long workspaces show the 8 that need the most attention.
+  const visible = showAll ? rows : rows.slice(0, 8);
 
   return (
     <ChartCard
@@ -71,7 +75,7 @@ export function ImportReadiness({ sources, listings }: { sources: SourceDTO[]; l
       }}
     >
       <ul className="divide-y rounded-md border">
-        {rows.map(({ source, total, forecast, flags }) => {
+        {visible.map(({ source, total, forecast, flags }) => {
           const pct = total ? Math.round((forecast.publishable / total) * 100) : 0;
           return (
             <li key={source.id} className="grid gap-3 p-3 md:grid-cols-[minmax(0,14rem)_minmax(0,16rem)_1fr_auto] md:items-center">
@@ -125,6 +129,11 @@ export function ImportReadiness({ sources, listings }: { sources: SourceDTO[]; l
           );
         })}
       </ul>
+      {rows.length > 8 && (
+        <Button variant="ghost" size="sm" className="mt-2" onClick={() => setShowAll((v) => !v)}>
+          {showAll ? "Show fewer" : `Show all ${rows.length} sources`}
+        </Button>
+      )}
     </ChartCard>
   );
 }

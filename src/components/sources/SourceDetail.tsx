@@ -22,7 +22,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useAppData } from "@/providers/useAppData";
 import { HealthDot, ScoreBadge, healthOf, healthReasons } from "./health";
 import { ApplyVersionDialog, DeleteSourceDialog, DeleteVersionDialog } from "./VersionDialogs";
-import { pct } from "./format";
+import { pct, timeAgo } from "./format";
 import { AgencyLogo } from "@/components/AgencyLogo";
 import { ShareDialog } from "@/components/ShareDialog";
 
@@ -195,37 +195,48 @@ export function SourceDetail({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start gap-3">
-        <AgencyLogo src={info?.logo} name={source.name} className="h-10 w-10 border" />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-xl font-bold text-foreground">{source.name}</h2>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <HealthDot health={health} withLabel />
-            {source.agencyName && source.agencyName !== source.name && <span>Agency: {source.agencyName}</span>}
-            {info?.website && (
-              <a href={info.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
-                Website <ExternalLink className="h-3 w-3" aria-hidden />
-              </a>
-            )}
-            <span>Keeps last {source.retainVersions} versions</span>
+      <div className="space-y-3 rounded-xl border bg-card p-4">
+        <div className="flex items-start gap-3">
+          <AgencyLogo src={info?.logo} name={source.name} className="h-11 w-11 shrink-0 border" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <h2 className="truncate text-xl font-bold leading-tight text-foreground">{source.name}</h2>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <HealthDot health={health} withLabel />
+              <span aria-hidden>·</span>
+              <span>
+                {live
+                  ? `Live v${live.number} · ${live.listingCount.toLocaleString()} listings · updated ${timeAgo(live.createdAt)}`
+                  : "No live version"}
+              </span>
+              {source.agencyName && source.agencyName !== source.name && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>Agency: {source.agencyName}</span>
+                </>
+              )}
+              {info?.website && (
+                <>
+                  <span aria-hidden>·</span>
+                  <a href={info.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
+                    Website <ExternalLink className="h-3 w-3" aria-hidden />
+                  </a>
+                </>
+              )}
+              <span aria-hidden>·</span>
+              <span>Keeps last {source.retainVersions} versions</span>
+            </div>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            asChild
-            onClick={() => setScope({ mode: "agency", agencyName: source.name })}
-          >
-            <Link to="/listings">View listings</Link>
-          </Button>
-          {live && <ShareDialog kind="source" sourceId={source.id} label={source.name} />}
-          {live && <ReportsMenu source={source} version={live} />}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" asChild onClick={() => setScope({ mode: "agency", agencyName: source.name })}>
+              <Link to="/listings">View listings</Link>
+            </Button>
+            {live && <ShareDialog kind="source" sourceId={source.id} label={source.name} />}
+            {live && <ReportsMenu source={source} version={live} />}
+          </div>
           {canEdit && (
-            <>
-              <Button size="sm" onClick={onUpload}>
-                <Upload className="mr-1.5 h-4 w-4" /> Upload version
-              </Button>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -238,7 +249,7 @@ export function SourceDetail({
               <SettingsPopover key={source.id + source.updatedAt} source={source} />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" aria-label="Delete">
+                  <Button variant="outline" size="sm" aria-label="Delete" title="Delete">
                     <Trash2 className="h-4 w-4 text-destructive-text" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -251,7 +262,10 @@ export function SourceDetail({
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </>
+              <Button size="sm" onClick={onUpload}>
+                <Upload className="mr-1.5 h-4 w-4" /> Upload version
+              </Button>
+            </div>
           )}
         </div>
       </div>

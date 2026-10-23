@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { ChartCard, Columns, Donut, HBars, Heatmap, Lines, ScatterPlot, SERIES, type SeriesDef } from "@/components/charts/ChartKit";
+import { ChartCard, Columns, Donut, EmptyChart, HBars, Heatmap, Lines, ScatterPlot, SERIES, type SeriesDef } from "@/components/charts/ChartKit";
 import { bedroomMix, priceBands, topValues, type Bucket } from "@/lib/sourceInsights";
 import { QUALITY_CHECKS, listingQuality } from "@/lib/versionStats";
 import type { SourceDTO } from "@/lib/sourcesApi";
@@ -20,34 +20,32 @@ const DIFF: SeriesDef[] = [
 ];
 const COUNT = (label: string): SeriesDef[] => [{ key: "count", label, color: SERIES[0] }];
 const bucketTable = (head: string, b: Bucket[]) => ({ columns: [head, "Listings"], rows: b.map((x) => [x.label, x.count]) });
-const stamp = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
-/** Sources keep their colour across every chart: slot by creation order, capped at 8. */
-function sourceColors(sources: SourceDTO[]): Map<string, string> {
-  const ordered = [...sources].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  return new Map(ordered.slice(0, SERIES.length).map((s, i) => [s.id, SERIES[i]]));
-}
+const TOP_SOURCES = 15;
+const liveOf = (s: SourceDTO) => s.versions.find((v) => v.id === s.activeVersionId);
 
 /** Inventory and change history per source, driven by version metadata (no listing download). */
 export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
   const navigate = useNavigate();
-  const colors = useMemo(() => sourceColors(sources), [sources]);
-  const tracked = useMemo(() => sources.filter((s) => colors.has(s.id)), [sources, colors]);
 
-  const history = useMemo(() => {
-    const points = tracked
-      .flatMap((s) => s.versions.filter((v) => v.status === "ready").map((v) => ({ s, v })))
-      .sort((a, b) => a.v.createdAt.localeCompare(b.v.createdAt));
-    // One point per upload; each line carries forward its source's last known count.
-    const last: Record<string, number> = {};
-    const rows: Record<string, string | number | null>[] = [];
-    for (const { s, v } of points) {
-      last[s.id] = v.listingCount;
-      rows.push({ day: stamp(v.createdAt), ...last });
-    }
-    return rows;
-  }, [tracked]);
+  // Only sources with history make a trend; the largest 8 keep a stable colour each.
+  const trend = useMemo(() => {
+    const withHistory = sources
+      .map((s) => ({ s, versions: s.versions.filter((v) => v.status === "ready").sort((a, b) => a.number - b.number) }))
+      .filter((x) => x.versions.length >= 2)
+      .sort((a, b) => (liveOf(b.s)?.listingCount ?? 0) - (liveOf(a.s)?.listingCount ?? 0))
+      .slice(0, SERIES.length);
+    const ordered = [...withHistory].sort((a, b) => a.s.createdAt.localeCompare(b.s.createdAt));
+    const series = ordered.map((x, i) => ({ key: x.s.id, label: x.s.name, color: SERIES[i] }));
+    const depth = Math.max(0, ...withHistory.map((x) => x.versions.length));
+    // Row i = each source's (i+1)-th kept version, so sources line up by version, not by clock time.
+    const rows = Array.from({ length: depth }, (_, i) => {
+      const row: Record<string, string | number | null> = { v: `#${i + 1}` };
+      for (const x of withHistory) row[x.s.id] = x.versions[i]?.listingCount ?? null;
+      return row;
+    });
+    return { series, rows, skipped: sources.filter((s) => s.versions.length >= 2).length - withHistory.length };
+  }, [sources]);
 
   const recent = useMemo(
     () =>
@@ -58,6 +56,7 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
         .reverse()
         .map(({ s, v }) => ({
           label: `${s.name.split(/\s+/)[0]} v${v.number}`,
+          name: `${s.name} v${v.number}`,
           added: v.added,
           changed: v.changed,
           // Diverging: removals plot below the zero line.
@@ -66,50 +65,58 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
     [sources],
   );
 
-  const lineSeries = tracked.map((s) => ({ key: s.id, label: s.name, color: colors.get(s.id)! }));
+  const inventory = useMemo(
+    () =>
+      sources
+        .map((s) => {
+          const live = liveOf(s);
+          const p = live?.stats?.purpose;
+          return { name: s.name, sale: p?.sale ?? 0, rent: p?.rent ?? 0, total: live?.listingCount ?? 0 };
+        })
+        .sort((a, b) => b.total - a.total),
+    [sources],
+  );
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <ChartCard
         title="Listings per version"
-        description={`Listing count after each upload, by source.${sources.length > SERIES.length ? ` Showing the first ${SERIES.length} sources.` : ""}`}
-        legend={lineSeries}
+        description={
+          trend.series.length
+            ? `Listing count of each kept version (#1 = oldest), for sources with history.${trend.skipped > 0 ? ` Largest ${SERIES.length} shown.` : ""}`
+            : undefined
+        }
+        legend={trend.series}
         table={{
-          columns: ["Upload", ...lineSeries.map((s) => s.label)],
-          rows: history.map((r) => [String(r.day), ...lineSeries.map((s) => (r[s.key] as number | undefined) ?? "")]),
+          columns: ["Version", ...trend.series.map((s) => s.label)],
+          rows: trend.rows.map((r) => [String(r.v), ...trend.series.map((s) => (r[s.key] as number | null) ?? "")]),
         }}
       >
-        <Lines data={history} xKey="day" series={lineSeries} />
+        {trend.series.length ? (
+          <Lines data={trend.rows} xKey="v" series={trend.series} />
+        ) : (
+          <EmptyChart text="Appears once a source has two or more versions." />
+        )}
       </ChartCard>
       <ChartCard
         title="Recent changes"
         description="Added and changed above the line, removed below, for the last uploads (oldest first)."
         legend={DIFF}
-        table={{ columns: ["Upload", "Added", "Changed", "Removed"], rows: recent.map((r) => [r.label, r.added, r.changed, -r.removed]) }}
+        table={{ columns: ["Upload", "Added", "Changed", "Removed"], rows: recent.map((r) => [r.name, r.added, r.changed, -r.removed]) }}
       >
         <Columns data={recent} xKey="label" series={DIFF} />
       </ChartCard>
       <ChartCard
         title="Live inventory by source"
-        description="Sale and rent listings in each source's live version. Click a bar to open the agency."
+        description={`Sale and rent listings in each source's live version${
+          inventory.length > TOP_SOURCES ? `; largest ${TOP_SOURCES} of ${inventory.length} (all in the table)` : ""
+        }. Click a bar to open the agency.`}
         legend={SALE_RENT}
         className="lg:col-span-2"
-        table={{
-          columns: ["Source", "Sale", "Rent", "Total"],
-          rows: sources.map((s) => {
-            const live = s.versions.find((v) => v.id === s.activeVersionId);
-            const p = live?.stats?.purpose;
-            return [s.name, p?.sale ?? 0, p?.rent ?? 0, live?.listingCount ?? 0];
-          }),
-        }}
+        table={{ columns: ["Source", "Sale", "Rent", "Total"], rows: inventory.map((r) => [r.name, r.sale, r.rent, r.total]) }}
       >
         <HBars
-          data={sources
-            .map((s) => {
-              const p = s.versions.find((v) => v.id === s.activeVersionId)?.stats?.purpose;
-              return { name: s.name, sale: p?.sale ?? 0, rent: p?.rent ?? 0 };
-            })
-            .sort((a, b) => b.sale + b.rent - (a.sale + a.rent))}
+          data={inventory.slice(0, TOP_SOURCES).map(({ name, sale, rent }) => ({ name, sale, rent }))}
           labelKey="name"
           series={SALE_RENT}
           onSelect={(r) => navigate(`/agencies/${encodeURIComponent(String(r.name))}`)}
