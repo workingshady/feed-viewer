@@ -19,6 +19,8 @@ export function blobRouter(blobStore: BlobStore) {
   router.post(
     "/upload",
     asyncHandler(async (req, res) => {
+      // Without a token the SDK throws a generic error; say what is actually missing.
+      if (!process.env.BLOB_READ_WRITE_TOKEN) throw new HttpError(503, "blob_not_configured");
       const result = await handleUpload({
         body: req.body as HandleUploadBody,
         request: req,
