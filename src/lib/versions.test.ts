@@ -91,3 +91,21 @@ describe("source insights", () => {
     expect(moves.down[0].pct).toBeCloseTo(-0.2);
   });
 });
+
+describe("diff engine", () => {
+  it("ignores noise: photo order/query strings, whitespace, case of references, new agent fields, lastUpdate", () => {
+    const a = listing("REF-1", { images: ["https://x/1.jpg?v=1", "https://x/2.jpg"], title: "Nice  flat", lastUpdate: "2026-01-01", agent: { name: "Sara", phone: "+971 50 1", email: "S@x.ae", photo: "" } });
+    const b = listing("ref-1 ", { images: ["https://x/2.jpg", "https://x/1.jpg?v=2"], title: "Nice flat", lastUpdate: "2026-02-01", agent: { name: "sara", phone: "+971501", email: "s@x.ae", photo: "", licenseNo: "123" } });
+    const d = diffListings([a], [b]);
+    expect(diffCounts(d)).toEqual({ added: 0, removed: 0, changed: 0 });
+    expect(d.unchangedCount).toBe(1);
+  });
+
+  it("detects a re-posted listing under a new reference", () => {
+    const base = { purpose: "sale" as const, propertyType: "Apartment", community: "JBR", beds: 2, area: 1200, images: ["https://x/main.jpg"], title: "Sea view 2BR in JBR" };
+    const d = diffListings([listing("OLD-1", { ...base, price: 2_000_000 })], [listing("NEW-9", { ...base, price: 1_950_000 })]);
+    expect(diffCounts(d)).toEqual({ added: 0, removed: 0, changed: 0 });
+    expect(d.relisted[0]).toMatchObject({ before: { reference: "OLD-1" }, after: { reference: "NEW-9" }, keys: ["reference", "price"] });
+    expect(d.relisted[0].signals).toContain("same main photo");
+  });
+});

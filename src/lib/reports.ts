@@ -33,6 +33,10 @@ export function changesCsv(diff: VersionDiff): string {
   const out: unknown[][] = [];
   for (const l of diff.added) out.push(["added", l.reference, l.title, "", "", l.price]);
   for (const l of diff.removed) out.push(["removed", l.reference, l.title, "", l.price, ""]);
+  for (const r of diff.relisted) {
+    out.push(["relisted", r.after.reference, r.after.title, "Reference", r.before.reference, r.after.reference]);
+    for (const k of r.keys) if (k !== "reference") out.push(["relisted", r.after.reference, r.after.title, FIELD_LABEL[k] ?? k, r.before[k], r.after[k]]);
+  }
   for (const c of diff.changed) {
     for (const k of c.keys) {
       out.push(["changed", c.after.reference, c.after.title, FIELD_LABEL[k] ?? k, c.before[k], c.after[k]]);

@@ -221,6 +221,7 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
           <TabsTrigger value="added">Added {diff.added.length}</TabsTrigger>
           <TabsTrigger value="removed">Removed {diff.removed.length}</TabsTrigger>
           <TabsTrigger value="changed">Changed {diff.changed.length}</TabsTrigger>
+          {diff.relisted.length > 0 && <TabsTrigger value="relisted">Relisted {diff.relisted.length}</TabsTrigger>}
         </TabsList>
         <TabsContent value="added">
           <ListingLinks sourceId={source.id} listings={diff.added} />
@@ -228,6 +229,30 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
         <TabsContent value="removed">
           <p className="mb-2 text-xs text-muted-foreground">These were in v{prev.number} but are not in the live version.</p>
           <ListingLinks sourceId={source.id} listings={diff.removed} linked={false} />
+        </TabsContent>
+        <TabsContent value="relisted">
+          <p className="mb-2 text-xs text-muted-foreground">
+            Same property under a new reference number — matched by photos, size, location, price and agent, so it isn't counted
+            as removed + added.
+          </p>
+          <ul className="divide-y divide-border rounded-lg border text-sm">
+            {diff.relisted.slice(0, 200).map((r) => (
+              <li key={r.after.reference} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+                <span className="font-mono text-xs text-muted-foreground">{r.before.reference}</span>
+                <span aria-hidden>→</span>
+                <Link to={listingHref(source.id, r.after)} className="font-mono text-xs hover:underline">
+                  {r.after.reference}
+                </Link>
+                <span className="min-w-0 flex-1 truncate">{r.after.title}</span>
+                <span className="text-xs text-muted-foreground">{r.signals.join(", ")}</span>
+                {r.keys.filter((k) => k !== "reference").length > 0 && (
+                  <span className="text-xs text-warning">
+                    also changed: {r.keys.filter((k) => k !== "reference").map((k) => FIELD_LABEL[k] ?? k).join(", ")}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </TabsContent>
         <TabsContent value="changed">
           <ListingLinks sourceId={source.id} listings={diff.changed.map((c) => c.after)} />

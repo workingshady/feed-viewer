@@ -129,7 +129,7 @@ export function VersionRow({
             )}
             {!isLive && (
               <DropdownMenuItem asChild>
-                <Link to={`/feed-compare?source=${source.id}&a=live&b=${version.id}`}>
+                <Link to={`/feed-compare?source=${source.id}&a=${version.id}&b=live`}>
                   <GitCompare className="mr-2 h-4 w-4" /> Compare with live
                 </Link>
               </DropdownMenuItem>

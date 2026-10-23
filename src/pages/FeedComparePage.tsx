@@ -15,7 +15,6 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FeedComparePairPanel } from "@/components/FeedComparePairPanel";
-import { WorkflowCompareLinks } from "@/components/WorkflowCompareLinks";
 import {
   compareCrossImportFeeds,
   crossImportPairKindBadgeVariant,
@@ -193,29 +192,13 @@ export default function FeedComparePage() {
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/12 ring-1 ring-primary/20">
                 <ArrowRightLeft className="w-7 h-7 text-primary-text" aria-hidden />
               </span>
-              Feed compare
+              Compare versions
             </h1>
             <p className="text-muted-foreground text-base leading-relaxed">
-              Compare two feeds at listing level: <span className="text-foreground font-medium">reference</span>, optional{" "}
-              <span className="text-foreground font-medium">permit / Trakheesi</span> match, then{" "}
-              <span className="text-foreground font-medium">fuzzy</span> (location + title + price band, strict or loose).
-              Tune matching under Sources. Unpaired rows show in Only in A/B; many-to-one fuzzy collisions land in Ambiguous.
+              See exactly what changed between two uploads of the same agency feed. Listings are matched by reference first,
+              then by permit number, then by location, title and price for listings whose reference changed.
             </p>
           </div>
-        </div>
-
-        <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <WorkflowCompareLinks current="feed-compare" className="max-w-xl text-[11px] sm:text-xs" heading="Related workflows" />
-          <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 shrink-0">
-            <span className="font-medium text-foreground">Also</span>
-            <span className="opacity-40" aria-hidden>
-              ·
-            </span>
-            <Link to="/sources" className="text-primary-text hover:underline inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded-sm">
-              <Layers className="w-3 h-3 shrink-0" aria-hidden />
-              Sources
-            </Link>
-          </p>
         </div>
 
         <Card role="region" aria-labelledby="feed-compare-sources-heading">
@@ -297,8 +280,9 @@ export default function FeedComparePage() {
                     className="text-sm rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100"
                     role="status"
                   >
-                    Versions A and B are the same — comparison will show no differences unless duplicates exist inside
-                    the feed.
+                    {source.versions.length < 2
+                      ? "This source has only one version. Upload another version on Sources to see what changed."
+                      : "Pick two different versions to see what changed."}
                   </p>
                 )}
 
