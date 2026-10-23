@@ -1,13 +1,20 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AgentsDashboard } from "@/components/agents/AgentsDashboard";
 import { Download, Search, Users } from "lucide-react";
 import { AgentPhoto } from "@/components/AgentPhoto";
 import AppHeader from "@/components/AppHeader";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { useAppData } from "@/providers/DataProvider";
 import type { Listing } from "@/lib/types";
 import { AgentCard, summarizeAgents, usePaged } from "@/components/AgentCard";
@@ -37,7 +44,10 @@ const AgentsPage = () => {
   const [agencyKey, setAgencyKey] = useState<string>(ALL_AGENCIES);
 
   const agencyNames = useMemo(
-    () => Array.from(listingsByAgency.keys()).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    () =>
+      Array.from(listingsByAgency.keys())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
     [listingsByAgency],
   );
 
@@ -50,12 +60,31 @@ const AgentsPage = () => {
     return listingsByAgency.get(agencyKey) ?? [];
   }, [agencyKey, listingsByAgency]);
 
+  const allAgents = useMemo(
+    () => summarizeAgents(sourceListings, agencyNames),
+    [sourceListings, agencyNames],
+  );
+  const [params, setParams] = useSearchParams();
+  const view = params.get("view") === "directory" ? "directory" : "dashboard";
+  const setView = (v: string) =>
+    setParams(
+      (p) => {
+        p.set("view", v);
+        return p;
+      },
+      { replace: true },
+    );
+
   const agents = useMemo(() => {
-    const arr = summarizeAgents(sourceListings, agencyNames);
+    const arr = [...allAgents];
     const query = q.trim().toLowerCase();
     const filtered = !query
       ? arr
-      : arr.filter((a) => a.name.toLowerCase().includes(query) || a.topCommunities.join(" ").toLowerCase().includes(query));
+      : arr.filter(
+          (a) =>
+            a.name.toLowerCase().includes(query) ||
+            a.topCommunities.join(" ").toLowerCase().includes(query),
+        );
     filtered.sort((a, b) => {
       switch (sort) {
         case "count_asc":
@@ -69,21 +98,61 @@ const AgentsPage = () => {
       }
     });
     return filtered;
-  }, [sourceListings, agencyNames, q, sort]);
+  }, [allAgents, q, sort]);
   const paged = usePaged(agents);
 
   const exportCsv = () => {
     const csv = toCsv(
-      ["name", "email", "phone", "listings", "sale", "rent", "median_sale", "top_communities", "listings_without_phone", "listings_without_email"],
-      agents.map((a) => [a.name, a.email, a.phone, a.count, a.sale, a.rent, a.medianSale ?? "", a.topCommunities.join(" | "), a.missingPhone, a.missingEmail]),
+      [
+        "name",
+        "email",
+        "phone",
+        "listings",
+        "sale",
+        "rent",
+        "median_sale",
+        "top_communities",
+        "listings_without_phone",
+        "listings_without_email",
+      ],
+      agents.map((a) => [
+        a.name,
+        a.email,
+        a.phone,
+        a.count,
+        a.sale,
+        a.rent,
+        a.medianSale ?? "",
+        a.topCommunities.join(" | "),
+        a.missingPhone,
+        a.missingEmail,
+      ]),
     );
-    downloadText(`agents-${agencyKey === ALL_AGENCIES ? "all-sources" : agencyKey}.csv`, csv);
+    downloadText(
+      `agents-${agencyKey === ALL_AGENCIES ? "all-sources" : agencyKey}.csv`,
+      csv,
+    );
   };
 
   const profileHref = (agentName: string) =>
     agencyKey === ALL_AGENCIES
       ? `/agents/${encodeURIComponent(agentName)}`
       : `/agencies/${encodeURIComponent(agencyKey)}/agents/${encodeURIComponent(agentName)}`;
+
+  const noAgents = (
+    <Card className="p-10 text-center">
+      <div className="mb-2 text-lg font-bold text-foreground">
+        No agent data found
+      </div>
+      <div className="mb-5 text-sm text-muted-foreground">
+        Upload a feed that contains agent details (name, phone, email, photo),
+        or pick another agency.
+      </div>
+      <Button asChild>
+        <Link to="/sources">Go to Sources</Link>
+      </Button>
+    </Card>
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -95,8 +164,11 @@ const AgentsPage = () => {
               <Users className="w-6 h-6 text-primary-text" /> Agents
             </h1>
             <p className="text-sm text-muted-foreground">
-              {agents.length.toLocaleString()} agents across the live feeds. Pick an agency to focus on its team; cards show
-              inventory, median sale price and missing contact details.
+              {allAgents.length.toLocaleString()} agents in the live feeds
+              {agencyKey === ALL_AGENCIES
+                ? " across every agency"
+                : ` at ${agencyKey}`}
+              . Pick an agency to focus on its team.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -113,57 +185,89 @@ const AgentsPage = () => {
                 ))}
               </SelectContent>
             </Select>
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search agents or communities…" className="pl-10" />
-            </div>
-            <Button variant="outline" onClick={exportCsv} disabled={agents.length === 0}>
-              <Download className="mr-1.5 h-4 w-4" /> CSV
-            </Button>
-            <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
-              <SelectTrigger className="w-full sm:w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="count_desc">Most listings</SelectItem>
-                <SelectItem value="count_asc">Fewest listings</SelectItem>
-                <SelectItem value="avg_price_desc">Highest median sale price</SelectItem>
-                <SelectItem value="name_asc">Name A → Z</SelectItem>
-              </SelectContent>
-            </Select>
+            {view === "directory" && (
+              <>
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    placeholder="Search agents or communities…"
+                    className="pl-10"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={exportCsv}
+                  disabled={agents.length === 0}
+                >
+                  <Download className="mr-1.5 h-4 w-4" /> CSV
+                </Button>
+                <Select
+                  value={sort}
+                  onValueChange={(v) => setSort(v as SortKey)}
+                >
+                  <SelectTrigger className="w-full sm:w-56">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="count_desc">Most listings</SelectItem>
+                    <SelectItem value="count_asc">Fewest listings</SelectItem>
+                    <SelectItem value="avg_price_desc">
+                      Highest median sale price
+                    </SelectItem>
+                    <SelectItem value="name_asc">Name A → Z</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            )}
           </div>
         </div>
 
-        {agencyKey === ALL_AGENCIES ? (
-          <Badge variant="outline" className="mb-4 text-xs font-medium">
-            Showing agents aggregated across every agency
-          </Badge>
-        ) : (
-          <Badge variant="secondary" className="mb-4 text-xs font-medium">
-            Scoped to {agencyKey} — profile links open the agency-specific agent page
-          </Badge>
-        )}
-
-        {agents.length === 0 ? (
-          <Card className="p-10 text-center">
-            <div className="text-lg font-bold text-foreground mb-2">No agent data found</div>
-            <div className="text-sm text-muted-foreground mb-5">
-              Upload a feed that contains agent nodes (name/phone/email/photo), or pick another agency.
-            </div>
-            <Button asChild>
-              <Link to="/sources">Go to Sources</Link>
-            </Button>
-          </Card>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {paged.visible.map((a) => (
-                <AgentCard key={`${agencyKey}:${a.name}:${a.email}`} agent={a} href={profileHref(a.name)} />
-              ))}
-            </div>
-            {paged.more}
-          </>
-        )}
+        <Tabs value={view} onValueChange={setView}>
+          <TabsList className="mb-4">
+            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
+            <TabsTrigger value="directory">Directory</TabsTrigger>
+          </TabsList>
+          <TabsContent value="dashboard">
+            {allAgents.length === 0 ? (
+              noAgents
+            ) : (
+              <AgentsDashboard
+                agents={allAgents}
+                listings={sourceListings}
+                listingsByAgency={listingsByAgency}
+                agencyNames={agencyNames}
+                profileHref={profileHref}
+                allAgencies={agencyKey === ALL_AGENCIES}
+              />
+            )}
+          </TabsContent>
+          <TabsContent value="directory">
+            {agents.length === 0 ? (
+              q ? (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  No agents match "{q}".
+                </p>
+              ) : (
+                noAgents
+              )
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {paged.visible.map((a) => (
+                    <AgentCard
+                      key={`${agencyKey}:${a.name}:${a.email}`}
+                      agent={a}
+                      href={profileHref(a.name)}
+                    />
+                  ))}
+                </div>
+                {paged.more}
+              </>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

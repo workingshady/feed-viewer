@@ -25,7 +25,7 @@ const stamp = (iso: string) =>
 const pct = (n: number) => `${Math.round(n)}%`;
 
 /** Sources keep their colour across every chart: slot by creation order, capped at 8. */
-export function sourceColors(sources: SourceDTO[]): Map<string, string> {
+function sourceColors(sources: SourceDTO[]): Map<string, string> {
   const ordered = [...sources].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return new Map(ordered.slice(0, SERIES.length).map((s, i) => [s.id, SERIES[i]]));
 }
