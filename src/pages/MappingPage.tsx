@@ -66,9 +66,22 @@ const AUTO_MAP: Record<string, string> = {
   'completion_status': 'completionStatus',
 };
 
-/** Paths the XML parser fills without per-leaf FieldMapping (still shown in the list for transparency). */
+/**
+ * Paths the XML parser reads on its own (agent block, geopoints → lat/lng, amenity lists, rent
+ * period inside <price>), so they aren't "unmapped" even without a FieldMapping row.
+ */
+const PARSER_OWNED_PATHS = new Set([
+  'property.geopoints',
+  'property.private_amenities',
+  'property.commercial_amenities',
+  'property.features.feature',
+]);
 function isParserOwnedXmlPath(xmlPath: string): boolean {
-  return xmlPath.startsWith('property.agent.');
+  return (
+    xmlPath.startsWith('property.agent.') ||
+    xmlPath.startsWith('property.price.') ||
+    PARSER_OWNED_PATHS.has(xmlPath)
+  );
 }
 
 function inferAutoMap(xmlPath: string, leafName: string): FieldMapping['uiField'] | '' {

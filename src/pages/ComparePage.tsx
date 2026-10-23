@@ -1,7 +1,6 @@
 import AppHeader from "@/components/AppHeader";
 import { GitStyleDiffBlock } from "@/components/GitStyleDiffBlock";
 import { ListingsMap } from "@/components/ListingsMap";
-import { WorkflowCompareLinks } from "@/components/WorkflowCompareLinks";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -254,9 +253,6 @@ const EmptyState = () => (
           </Link>
         </Button>
       </div>
-      <div className="w-full max-w-lg rounded-xl border border-border bg-muted/25 px-4 py-3 text-left">
-        <WorkflowCompareLinks current="listing-compare" heading="Related workflows" className="text-[11px]" />
-      </div>
     </div>
   </div>
 );
@@ -406,7 +402,6 @@ const ComparePage = () => {
         </div>
 
         <div className="mb-5 rounded-lg border border-border/60 bg-card/40 px-3 py-2">
-          <WorkflowCompareLinks current="listing-compare" className="text-[11px] sm:text-xs" />
         </div>
 
         <Tabs

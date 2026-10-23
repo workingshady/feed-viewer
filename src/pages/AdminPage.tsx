@@ -15,7 +15,8 @@ import {
   type AdminAuditEvent,
   type AdminStatus,
 } from "@/lib/adminApi";
-import { formatBytes } from "@/components/sources/format";
+import { formatBytes, timeAgo } from "@/components/sources/format";
+import { useAppData } from "@/providers/useAppData";
 import { InviteUserButton, PendingInvitesCard, ResetLinkButton, SharedLinksCard } from "@/components/admin/AccessCards";
 import { ApiError } from "@/lib/api";
 import { roleLabel, type AppRole } from "@/lib/roles";
@@ -33,10 +34,11 @@ function adminErrorMessage(err: unknown): string {
 
 type Meta = Record<string, unknown>;
 
-/** Plain-language description of an audit event. */
-function describeEvent(e: AdminAuditEvent): string {
+/** Plain-language description of an audit event; `sourceName` resolves ids to names. */
+function describeEvent(e: AdminAuditEvent, sourceName: (id: unknown) => string | null = () => null): string {
   const m = (e.meta ?? {}) as Meta;
-  const v = m.number != null ? `v${m.number}` : "a version";
+  const of = sourceName(m.sourceId);
+  const v = m.number != null ? `v${m.number}${of ? ` of ${of}` : ""}` : "a version";
   switch (e.action) {
     case "version.upload":
       return `uploaded ${v}${m.applied ? " (made live)" : " (held for review)"}${
@@ -183,6 +185,8 @@ const AdminPage = () => {
   });
 
   const events = audit.data?.pages.flatMap((p) => p.events) ?? [];
+  const { sources } = useAppData();
+  const sourceName = (id: unknown) => sources.find((s) => s.id === id)?.name ?? null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -300,10 +304,10 @@ const AdminPage = () => {
                 <li key={e.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
                   <span>
                     <span className="font-medium">{e.user?.username ?? "system"}</span>{" "}
-                    <span className="text-foreground/80">{describeEvent(e)}</span>
+                    <span className="text-foreground/80">{describeEvent(e, sourceName)}</span>
                   </span>
-                  <time className="text-xs text-muted-foreground" dateTime={e.createdAt}>
-                    {new Date(e.createdAt).toLocaleString()}
+                  <time className="text-xs text-muted-foreground" dateTime={e.createdAt} title={new Date(e.createdAt).toLocaleString()}>
+                    {timeAgo(e.createdAt)}
                   </time>
                 </li>
               ))}
