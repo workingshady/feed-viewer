@@ -169,7 +169,8 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
 /** Renders footer for most routes; hides on auth screens; home uses richer `brand` styling. */
 export function SiteFooterGate() {
   const { pathname } = useLocation();
-  if (pathname === "/login" || pathname === "/signup") return null;
+  // Auth pages and public share pages stay minimal: no links into the private app.
+  if (pathname === "/login" || pathname === "/signup" || /^\/(s|invite)\//.test(pathname)) return null;
   const variant: SiteFooterVariant = pathname === "/" ? "brand" : "surface";
   return <SiteFooter variant={variant} />;
 }

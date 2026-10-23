@@ -10,6 +10,10 @@ import { signupDecision } from "../src/auth/policy.js";
 const deleted: string[] = [];
 const app = createApp({
   blobStore: { del: async (urls) => void deleted.push(...urls) },
+  loadListings: async () => [
+    { id: "L-1", reference: "L-1", title: "Shared flat", price: 100 },
+    { id: "L-2", reference: "L-2", title: "Other flat", price: 200 },
+  ],
   extraRoutes: (a) =>
     a.get("/api/_boom", () => {
       throw new Error("db password leaked");
@@ -18,7 +22,7 @@ const app = createApp({
 
 async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE "AuditEvent","UserPref","LoginAttempt","Session","FeedVersion","Source","User" RESTART IDENTITY CASCADE',
+    'TRUNCATE "AuditEvent","UserPref","LoginAttempt","Session","ShareLink","Invite","FeedVersion","Source","User" RESTART IDENTITY CASCADE',
   );
   deleted.length = 0;
   env.ALLOW_SIGNUP = false;
@@ -119,6 +123,44 @@ describe("api", () => {
     env.ALLOW_SIGNUP = true;
     const { agent: viewer } = await signUp("guest");
     expect((await viewer.get("/api/admin/status")).status).toBe(403);
+  });
+
+  it("invites: one-time link creates an account; reset link replaces the password", async () => {
+    const { agent: admin } = await signUp("owner");
+    const inv = await admin.post("/api/admin/invites").send({ role: "editor" });
+    expect(inv.status).toBe(201);
+    const token = inv.body.token as string;
+    expect((await request(app).get(`/api/invites/${token}`)).body).toMatchObject({ kind: "invite", role: "editor" });
+
+    const newbie = request.agent(app);
+    const accepted = await newbie.post(`/api/invites/${token}/accept`).send({ username: "sara", password: "sara-password" });
+    expect(accepted.body.user).toMatchObject({ username: "sara", role: "editor" });
+    expect((await request(app).post(`/api/invites/${token}/accept`).send({ username: "eve", password: "eve-password" })).status).toBe(404);
+
+    const reset = await admin.post(`/api/admin/users/${accepted.body.user.id}/reset-link`);
+    await request(app).post(`/api/invites/${reset.body.token}/accept`).send({ password: "brand-new-pass" }).expect(200);
+    expect((await newbie.get("/api/auth/me")).body.user).toBeNull(); // old sessions signed out
+    expect((await request(app).post("/api/auth/login").send({ username: "sara", password: "brand-new-pass" })).status).toBe(200);
+  });
+
+  it("share links: read-only, counted, revocable, single 404 for bad links", async () => {
+    const { agent } = await signUp("owner");
+    const src = (await agent.post("/api/sources").send({ name: "Agency" })).body.source;
+    await agent.post(`/api/sources/${src.id}/versions`).send(versionBody(src.id, 1, 2)).expect(201);
+
+    const one = await agent.post("/api/shares").send({ kind: "listing", sourceId: src.id, listingRef: "L-1", label: "Shared flat" });
+    const pub = await request(app).get(`/api/public/shares/${one.body.token}`);
+    expect(pub.headers["x-robots-tag"]).toContain("noindex");
+    expect(pub.body).toMatchObject({ kind: "listing", listing: { title: "Shared flat" } });
+    expect(JSON.stringify(pub.body)).not.toContain("Other flat");
+
+    const all = await agent.post("/api/shares").send({ kind: "source", sourceId: src.id, label: "All", expiresInDays: null });
+    expect((await request(app).get(`/api/public/shares/${all.body.token}`)).body).toMatchObject({ kind: "source", listingCount: 2 });
+    expect((await agent.get("/api/shares")).body.shares[0].viewCount).toBeGreaterThanOrEqual(0);
+
+    await agent.delete(`/api/shares/${one.body.share.id}`).expect(200);
+    expect((await request(app).get(`/api/public/shares/${one.body.token}`)).body).toEqual({ error: "invalid_link" });
+    expect((await request(app).get("/api/public/shares/not-a-real-token")).body).toEqual({ error: "invalid_link" });
   });
 
   it("versions: auto-apply, safety block, apply, delete, duplicates, cleanup", async () => {

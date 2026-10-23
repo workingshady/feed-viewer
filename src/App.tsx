@@ -44,6 +44,8 @@ const ExportHubPage = lazy(() => import("./pages/ExportHubPage"));
 const MappingQaPage = lazy(() => import("./pages/MappingQaPage"));
 const RandomListingPage = lazy(() => import("./pages/RandomListingPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const SharePage = lazy(() => import("./pages/SharePage"));
+const AcceptInvitePage = lazy(() => import("./pages/AcceptInvitePage"));
 
 /** Signed-in pages. Every role can open them; editing controls inside are role-gated. */
 const PROTECTED: [string, LazyExoticComponent<ComponentType>][] = [
@@ -126,6 +128,8 @@ const App = () => (
                     <Route path="/export-hub" element={<ExportHubPage />} />
                     <Route path="/login" element={<LoginPage />} />
                     <Route path="/signup" element={<SignUpPage />} />
+                    <Route path="/invite/:token" element={<AcceptInvitePage />} />
+                    <Route path="/s/:token" element={<SharePage />} />
                     {PROTECTED.map(([path, Page]) => (
                       <Route
                         key={path}

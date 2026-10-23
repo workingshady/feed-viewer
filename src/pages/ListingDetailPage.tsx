@@ -9,6 +9,7 @@ import XmlTree from "@/components/XmlTree";
 import { addCompareListingId } from "@/lib/compareSelection";
 import { formatPriceCompact, formatPriceFull, listingPriceEyebrow } from "@/lib/displayPrice";
 import { useListingRawXml } from "@/hooks/useListingRawXml";
+import { ShareDialog } from "@/components/ShareDialog";
 import { isGitStyleTextField } from "@/lib/importDiffInsights";
 import { formatListingFieldValue } from "@/lib/listingFieldFormat";
 import { isListingFieldFilled } from "@/lib/listingFieldPresence";
@@ -406,9 +407,18 @@ const ListingDetailPage = () => {
               <Heart className={cn("w-3.5 h-3.5", fav && "fill-current")} />
               {fav ? "Saved" : "Save"}
             </Button>
+            {listing.id.includes(":") && (
+              <ShareDialog
+                kind="listing"
+                sourceId={listing.id.slice(0, listing.id.indexOf(":"))}
+                listingRef={listing.id.slice(listing.id.indexOf(":") + 1)}
+                label={listing.title || listing.reference}
+              />
+            )}
             <Button size="sm" variant="ghost" className="h-10 gap-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground px-4 text-sm"
-              onClick={async () => { try { await navigator.clipboard.writeText(window.location.href); toast.success("Link copied"); } catch { toast.error("Copy failed"); } }}>
-              <Share2 className="w-3.5 h-3.5" />Share
+              title="Copies this page's address — only signed-in teammates can open it. Use Share for people without an account."
+              onClick={async () => { try { await navigator.clipboard.writeText(window.location.href); toast.success("Link copied", { description: "Works for signed-in teammates. Use Share for anyone else." }); } catch { toast.error("Copy failed"); } }}>
+              <Share2 className="w-3.5 h-3.5" />Copy link
             </Button>
             <Button size="sm" variant="ghost" className="h-10 gap-1.5 rounded-full border border-border text-muted-foreground hover:text-foreground px-4 text-sm"
               onClick={() => { addCompareListingId(listing.id); toast.success("Added to compare"); }}>

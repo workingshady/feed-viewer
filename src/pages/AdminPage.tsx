@@ -16,6 +16,7 @@ import {
   type AdminStatus,
 } from "@/lib/adminApi";
 import { formatBytes } from "@/components/sources/format";
+import { InviteUserButton, PendingInvitesCard, ResetLinkButton, SharedLinksCard } from "@/components/admin/AccessCards";
 import { ApiError } from "@/lib/api";
 import { roleLabel, type AppRole } from "@/lib/roles";
 import { useAuth } from "@/providers/AuthProvider";
@@ -59,6 +60,18 @@ function describeEvent(e: AdminAuditEvent): string {
       return `changed a user's role to ${roleLabel(String(m.role ?? ""))}`;
     case "user.delete":
       return "deleted a user";
+    case "invite.create":
+      return `created an invite link (${roleLabel(String(m.role ?? "viewer"))})`;
+    case "invite.revoke":
+      return "revoked an invite link";
+    case "user.reset_link":
+      return "created a password reset link";
+    case "auth.password_reset":
+      return "reset their password with a link";
+    case "share.create":
+      return `shared ${m.kind === "listing" ? "a listing" : "a source's listings"}: ${m.label ?? ""}`;
+    case "share.revoke":
+      return `revoked a share link: ${m.label ?? ""}`;
     case "client.error":
       return `browser error on ${m.path ?? "a page"}: ${m.message ?? ""}`;
     default:
@@ -71,6 +84,7 @@ const AUDIT_FILTERS = [
   { value: "version.", label: "Versions", prefix: "version." },
   { value: "source.", label: "Sources", prefix: "source." },
   { value: "user.", label: "User changes", prefix: "user." },
+  { value: "share.", label: "Sharing", prefix: "share." },
   { value: "client.error", label: "Browser errors", prefix: "client.error" },
 ] as const;
 
@@ -196,8 +210,9 @@ const AdminPage = () => {
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle>Users</CardTitle>
+            <InviteUserButton />
           </CardHeader>
           <CardContent>
             {users.isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : null}
@@ -208,7 +223,7 @@ const AdminPage = () => {
                   <TableRow>
                     <TableHead>Username</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead className="w-24" />
+                    <TableHead className="w-36" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -232,7 +247,8 @@ const AdminPage = () => {
                           </SelectContent>
                         </Select>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="space-x-2 whitespace-nowrap text-right">
+                        <ResetLinkButton userId={u.id} username={u.username} />
                         <Button
                           variant="outline"
                           size="sm"
@@ -253,6 +269,9 @@ const AdminPage = () => {
             ) : null}
           </CardContent>
         </Card>
+
+        <PendingInvitesCard />
+        <SharedLinksCard />
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">

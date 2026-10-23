@@ -9,10 +9,14 @@ import { adminRouter } from "./admin/routes.js";
 import { sourcesRouter } from "./sources/routes.js";
 import { blobRouter } from "./blob/routes.js";
 import { observabilityRouter, requestLog } from "./observability.js";
+import { adminInvitesRouter, invitesRouter } from "./invites/routes.js";
+import { httpListingsLoader, sharesRouter, type ListingsLoader } from "./shares/routes.js";
 import type { BlobStore } from "./sources/blobStore.js";
 
 export type AppDeps = {
   blobStore: BlobStore;
+  /** Reads a version's listings for public share pages (defaults to fetching from storage). */
+  loadListings?: ListingsLoader;
   /** Extra routes mounted before the 404 handler (tests, e2e fakes). */
   extraRoutes?: (app: express.Express) => void;
 };
@@ -31,7 +35,10 @@ export function createApp(deps: AppDeps): express.Express {
   app.use("/api", observabilityRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/prefs", prefsRouter);
+  app.use("/api/admin", adminInvitesRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/invites", invitesRouter);
+  app.use("/api", sharesRouter(deps.loadListings ?? httpListingsLoader));
   app.use("/api/sources", sourcesRouter(deps.blobStore));
   app.use("/api/blob", blobRouter(deps.blobStore));
   deps.extraRoutes?.(app);

@@ -23,6 +23,7 @@ import { HealthDot, ScoreBadge, healthOf, healthReasons } from "./health";
 import { ApplyVersionDialog, DeleteSourceDialog, DeleteVersionDialog } from "./VersionDialogs";
 import { pct } from "./format";
 import { AgencyLogo } from "@/components/AgencyLogo";
+import { ShareDialog } from "@/components/ShareDialog";
 
 function SettingsPopover({ source }: { source: SourceDTO }) {
   const update = useUpdateSource();
@@ -222,6 +223,7 @@ export function SourceDetail({
           >
             <Link to="/listings">View listings</Link>
           </Button>
+          {live && <ShareDialog kind="source" sourceId={source.id} label={source.name} />}
           {canEdit && (
             <>
               <Button size="sm" onClick={onUpload}>

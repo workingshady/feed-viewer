@@ -67,6 +67,7 @@ model Source {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   versions        FeedVersion[] @relation("SourceVersions")
+  shares          ShareLink[]
 }
 
 model FeedVersion {
@@ -121,4 +122,48 @@ model UserPref {
   value  Json
 
   @@id([userId, key])
+}
+
+enum InviteKind {
+  invite
+  reset
+}
+
+/// One-time link to create an account (invite) or set a new password (reset). Only a hash of the token is stored.
+model Invite {
+  id          String     @id @default(cuid())
+  tokenHash   String     @unique
+  kind        InviteKind
+  role        Role       @default(viewer)
+  /// For reset links: the account whose password is being reset.
+  userId      String?
+  note        String?
+  createdById String?
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime   @default(now())
+}
+
+enum ShareKind {
+  listing
+  source
+}
+
+/// Read-only public link to one listing or to a source's live listings. Only a hash of the token is stored.
+model ShareLink {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  kind         ShareKind
+  sourceId     String
+  source       Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  listingRef   String?
+  label        String
+  createdById  String?
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([sourceId])
 }
