@@ -503,7 +503,7 @@ const ValidationPage = () => {
                 <>
                   <ShieldAlert className="w-5 h-5 shrink-0" />
                   <span>
-                    <strong>Parser errors present.</strong> Fix XML or mapping and re-import; some listings may be
+                    <strong>Parser errors present.</strong> Fix the XML or the field mapping, then upload or re-parse; some listings may be
                     incomplete or skipped.
                   </span>
                 </>

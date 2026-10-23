@@ -75,7 +75,7 @@ const PLAYBOOK_SECTIONS: Section[] = [
         cta: "Edit mapping",
       },
       {
-        title: "Field coverage (EDA)",
+        title: "Field quality",
         description: "Explore which XML paths populate which listing fields.",
         to: "/field-quality",
         cta: "Field coverage",
@@ -143,12 +143,12 @@ const PLAYBOOK_SECTIONS: Section[] = [
   {
     id: "discover",
     title: "Discover & export",
-    hint: "Ship data out, learn every route, and keep workspace state in sync.",
+    hint: "Ship data out and learn every route.",
     icon: ListTree,
     steps: [
       {
         title: "Export hub",
-        description: "Jump to CSV export, feed compare, listing compare, and workspace sync on Account.",
+        description: "CSV and JSON exports, version reports, and both compare tools in one place.",
         to: "/export-hub",
         cta: "Export hub",
       },

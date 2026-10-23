@@ -653,7 +653,7 @@ const WORKFLOW_TOOLTIPS: Record<
     "Side-by-side field comparison for 2–4 listings from your workspace (same screen as the compare tray in the header).",
   feed: "Compare two feeds side by side (same or different sessions) with field-level diffs.",
   validation: "Charts and filters for import health, duplicates, and data-quality issues in the active dataset.",
-  refresh: "Reload listings from all saved import sessions and the current workspace.",
+  refresh: "Re-run the matching on the live version of every source.",
   fuzzyLevels:
     "Choose how many stronger cross-agency signals (permit, map, photo, building, layout, content tiers, …) must “explain” a listing before its fuzzy cluster is hidden. Higher levels hide more fuzzy noise.",
 };
@@ -920,7 +920,7 @@ export default function CrossAgencyDupesPage() {
             aria-busy="true"
           >
             <Loader2 className="w-5 h-5 shrink-0 animate-spin text-primary-text" aria-hidden />
-            <span>Scanning import sessions…</span>
+            <span>Scanning live listings…</span>
           </p>
         ) : report ? (
           <div className="flex flex-col xl:flex-row gap-6 xl:gap-8 xl:items-start">

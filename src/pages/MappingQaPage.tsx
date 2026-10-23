@@ -57,9 +57,11 @@ export default function MappingQaPage() {
     return [
       {
         id: "mapping-config",
-        ok: mappingConfigured,
-        label: "Mapping config present",
-        hint: mappingConfigured ? "Listing node path and mapping rows exist." : "Configure XML field mapping before QA.",
+        ok: true,
+        label: "Field mapping",
+        hint: mappingConfigured
+          ? "A saved mapping is applied to this source."
+          : "No saved mapping: the parser auto-detects standard feed fields. Save one on Field mapping only to override paths.",
       },
       {
         id: "dup-targets",
@@ -87,8 +89,8 @@ export default function MappingQaPage() {
       {
         id: "dataset",
         ok: hasListings,
-        label: "Workspace listings loaded",
-        hint: hasListings ? `${stats.total} listings in current scope.` : "Upload a feed on Sources to run output checks.",
+        label: "Live listings parsed",
+        hint: hasListings ? `${stats.total.toLocaleString()} listings in the live version.` : "Upload a feed on Sources to run output checks.",
       },
       {
         id: "xml-buffer",
@@ -135,11 +137,11 @@ export default function MappingQaPage() {
             Sanity-check your XPath mapping against live parsed listings — duplicate targets, required fields, and spot issues
             before feeds go to buyers. Pair with{" "}
             <Link className="text-primary-text font-medium underline underline-offset-2 hover:text-primary-text/90" to="/validation">
-              Import validation
+              Validation
             </Link>{" "}
             and{" "}
             <Link className="text-primary-text font-medium underline underline-offset-2 hover:text-primary-text/90" to="/field-quality">
-              Field coverage (EDA)
+              Field quality
             </Link>
             .
           </p>

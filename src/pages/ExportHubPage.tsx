@@ -67,9 +67,10 @@ const CARDS: ExportCard[] = [
   },
   {
     tab: "sync",
-    title: "Workspace sync",
-    description: "Pull and push merged workspace state with the server — backup and multi-device continuity.",
-    to: "/account",
+    title: "Version reports",
+    description:
+      "Per version: feed checks, quality issues, added/removed/changed listings, field completeness, market insights, and agents JSON (ZibaAi format).",
+    to: "/sources?tab=versions",
     icon: RefreshCw,
     requiresAuth: true,
   },
@@ -200,7 +201,7 @@ export default function ExportHubPage() {
             </TabsTrigger>
             <TabsTrigger value="sync" className="gap-2 rounded-lg">
               <RefreshCw className="w-4 h-4 shrink-0 opacity-70" aria-hidden />
-              Sync & account
+              Reports
             </TabsTrigger>
           </TabsList>
 
