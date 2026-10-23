@@ -61,6 +61,8 @@ const PROPERTY_TYPE_MAP: Record<string, string> = {
   'ST': 'Studio',
   'SA': 'Staff Accommodation',
   'LA': 'Land',
+  'HA': 'Hotel Apartment',
+  'HO': 'Hotel',
 };
 
 function mapPropertyType(code: string): string {

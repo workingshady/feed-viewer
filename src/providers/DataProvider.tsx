@@ -6,6 +6,7 @@ import { SOURCES_KEY, useLiveListings, useSourcesQuery } from "@/hooks/useSource
 import { liveVersionOf, type SourceDTO } from "@/lib/sourcesApi";
 import { importListingDiffKey } from "@/lib/importAnalysis";
 import { currencyCode } from "@/lib/displayPrice";
+import { amenityLabel } from "@/lib/amenityCodes";
 import type { Listing } from "@/lib/types";
 
 export type { ListingsScope, AppData } from "@/providers/dataContext";
@@ -33,6 +34,7 @@ function withSourceIds(source: SourceDTO, listings: Listing[]): Listing[] {
     id: `${source.id}:${importListingDiffKey(l)}`,
     sourceAgency: source.name,
     currency: currencyCode(l.currency),
+    amenities: (l.amenities ?? []).map(amenityLabel),
   }));
 }
 

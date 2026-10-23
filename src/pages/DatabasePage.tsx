@@ -437,7 +437,7 @@ const DatabasePage = () => {
               Listing table
             </h1>
             <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl leading-snug">
-              Dense table: import status, specs, media counts, permit, amenities, and data-quality filters (no flag column).
+              Every live listing in one sortable table — change status vs the previous version, specs, photos, permit and quality filters.
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5 shrink-0">
@@ -468,7 +468,7 @@ const DatabasePage = () => {
             </p>
             <p>
               <strong className="text-foreground">Δ</strong> is import diff vs the previous run for the same agency.{" "}
-              <strong className="text-foreground">NAN</strong> in that column means no diff entry for this row (often another agency’s scope or a listing added outside the tracked import).
+              <strong className="text-foreground">—</strong> in that column means the listing has no change compared with the previous version of its source.
             </p>
             <p>
               Use <strong className="text-foreground">Import Δ</strong> to keep rows with a real diff, or isolate <strong className="text-foreground">new</strong>,{" "}
@@ -626,8 +626,8 @@ const DatabasePage = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All rows</SelectItem>
-                      <SelectItem value="has_diff">Has diff (not NAN)</SelectItem>
-                      <SelectItem value="no_diff">No diff (NAN only)</SelectItem>
+                      <SelectItem value="has_diff">Changed since previous version</SelectItem>
+                      <SelectItem value="no_diff">Unchanged</SelectItem>
                       <SelectItem value="new">New only</SelectItem>
                       <SelectItem value="updated">Updated</SelectItem>
                       <SelectItem value="unchanged">Unchanged (old)</SelectItem>
@@ -748,8 +748,8 @@ const DatabasePage = () => {
                     onValueChange={(v) => setImportStateFilter((v || "all") as ImportStateFilter)}
                     className="justify-start flex-wrap gap-1"
                   >
-                    <ToggleGroupItem value="has_diff" size="sm" className="text-xs" aria-label="Rows with import diff, not NAN">
-                      Not NAN
+                    <ToggleGroupItem value="has_diff" size="sm" className="text-xs" aria-label="Only rows changed since the previous version">
+                      Changed only
                     </ToggleGroupItem>
                     <ToggleGroupItem value="new_or_updated" size="sm" className="text-xs">
                       New + upd
@@ -876,7 +876,7 @@ const DatabasePage = () => {
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                 <Card className="shadow-sm border-muted">
                   <CardHeader className="py-3 px-4 space-y-1">
-                    <CardDescription className="text-[11px]">Δ missing (NAN)</CardDescription>
+                    <CardDescription className="text-[11px]">Unchanged (—)</CardDescription>
                     <CardTitle className="text-xl font-bold tabular-nums text-muted-foreground">
                       {importDiffBreakdown.noDiff.toLocaleString()}
                     </CardTitle>

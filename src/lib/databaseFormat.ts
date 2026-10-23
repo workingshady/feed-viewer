@@ -1,7 +1,8 @@
 import { formatPriceCompact } from "@/lib/displayPrice";
 import type { ImportListingStatus, Listing } from "@/lib/types";
 
-export const DB_MISSING = "NAN";
+/** Shown for empty cells (a dash reads as "no value", unlike "NaN"). */
+export const DB_MISSING = "—";
 
 /**
  * Many Dubai/XML feeds use &lt;price_on_application&gt;Yes&lt;/...&gt; / No.
