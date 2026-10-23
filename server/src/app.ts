@@ -8,6 +8,7 @@ import { prefsRouter } from "./prefs/routes.js";
 import { adminRouter } from "./admin/routes.js";
 import { sourcesRouter } from "./sources/routes.js";
 import { blobRouter } from "./blob/routes.js";
+import { observabilityRouter, requestLog } from "./observability.js";
 import type { BlobStore } from "./sources/blobStore.js";
 
 export type AppDeps = {
@@ -25,11 +26,9 @@ export function createApp(deps: AppDeps): express.Express {
   app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
-  });
-
+  app.use(requestLog);
   app.use(authMiddleware);
+  app.use("/api", observabilityRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/prefs", prefsRouter);
   app.use("/api/admin", adminRouter);

@@ -16,6 +16,7 @@ import type { Listing } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useAppData } from "@/providers/DataProvider";
 import type { LucideIcon } from "lucide-react";
+import { AgencyLogo } from "@/components/AgencyLogo";
 import {
     AlertTriangle,
     ArrowRight,
@@ -308,7 +309,7 @@ export default function Index() {
 
   if (isLoading && !hasData) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a]">
+      <div className="min-h-screen overflow-x-clip bg-[#0a0a0a]">
         <AppHeader />
         <main className="pt-[calc(5rem+env(safe-area-inset-top,0px))] px-6 py-24 text-center text-white/60">
           <p role="status">Loading feeds...</p>
@@ -320,7 +321,7 @@ export default function Index() {
   if (sources.length === 0 || !hasData) {
     const isEditor = hasRole(user?.role, "editor");
     return (
-      <div className="min-h-screen bg-[#0a0a0a]">
+      <div className="min-h-screen overflow-x-clip bg-[#0a0a0a]">
         <AppHeader />
         <main className="pt-[calc(5rem+env(safe-area-inset-top,0px))] px-6 py-24 text-center">
           <div className="mx-auto max-w-md space-y-4">
@@ -342,7 +343,7 @@ export default function Index() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a]">
+    <div className="min-h-screen overflow-x-clip bg-[#0a0a0a]">
       <AppHeader />
       <a
         href="#main-content"
@@ -393,14 +394,14 @@ export default function Index() {
             </div>
 
             <h1 className="font-heading font-semibold text-[clamp(2rem,5.5vw,4.25rem)] leading-[1.02] tracking-tight text-primary-foreground mb-6 max-w-[640px] uppercase">
-              Experience the{" "}
-              <span className="text-brand-amber">epitome</span>
+              {user ? `Welcome back, ${user.username}` : "Your live feeds"}
               <br />
-              of feed clarity
+              <span className="text-brand-amber">at a glance</span>
             </h1>
 
             <p className="text-primary-foreground/78 text-base leading-relaxed mb-10 max-w-[480px] font-body">
-              Import any real estate XML feed and see listings as a modern property portal. Map fields, inspect data quality, and compare exports — built for agencies and integrators.
+              Everything below comes from the live version of each source. Upload a new version, compare it, or roll back on
+              Sources — every page follows.
             </p>
 
             <div className="flex flex-wrap gap-3">
@@ -463,7 +464,7 @@ export default function Index() {
                   <path id="fv-circle" d="M 52,52 m -38,0 a 38,38 0 1,1 76,0 a 38,38 0 1,1 -76,0" />
                 </defs>
                 <text className="fill-white/45 text-[8px] tracking-[0.32em] font-semibold uppercase font-body">
-                  <textPath href="#fv-circle">FEEDVIEW • XML • INSPECT • MAP • </textPath>
+                  <textPath href="#fv-circle">FEED VIEWER PRO • VERSIONS • QUALITY • </textPath>
                 </text>
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1344,11 +1345,7 @@ export default function Index() {
                     >
                       <div className="flex items-start gap-4">
                         <div className="w-16 h-16 rounded-2xl bg-white/[0.06] ring-2 ring-white/15 overflow-hidden flex items-center justify-center shrink-0">
-                          {row.logo ? (
-                            <img src={row.logo} alt={`${row.name} logo`} className="w-full h-full object-cover" loading="lazy" />
-                          ) : (
-                            <Building2 className="w-7 h-7 text-white/35" aria-hidden />
-                          )}
+                          <AgencyLogo src={row.logo} name={row.name} className="h-full w-full" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="font-heading font-semibold text-lg text-white leading-snug group-hover:text-brand-amber transition-colors">

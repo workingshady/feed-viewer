@@ -103,10 +103,10 @@ export default function SourcesPage() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-[minmax(260px,340px)_1fr]">
-              <aside>
+              <aside className="min-w-0">
                 <SourceList sources={sources} selectedId={selected?.id ?? null} onSelect={select} />
               </aside>
-              <section aria-label="Source details">
+              <section aria-label="Source details" className="min-w-0">
                 {selected ? (
                   <SourceDetail
                     source={selected}

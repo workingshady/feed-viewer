@@ -104,6 +104,10 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       keyframes: {
+        topbar: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(300%)" },
+        },
         "accordion-down": {
           from: { height: "0" },
           to: { height: "var(--radix-accordion-content-height)" },

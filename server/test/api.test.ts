@@ -110,6 +110,17 @@ describe("api", () => {
     expect(demote.body).toEqual({ error: "last_admin" });
   });
 
+  it("observability: deep health, browser error reports, admin-only status", async () => {
+    expect((await request(app).get("/api/health?deep=1")).body).toMatchObject({ ok: true });
+    const { agent: admin } = await signUp("owner");
+    expect((await request(app).post("/api/telemetry/error").send({ message: "boom", path: "/x" })).status).toBe(202);
+    const status = await admin.get("/api/admin/status");
+    expect(status.body.last24h.clientErrors).toBe(1);
+    env.ALLOW_SIGNUP = true;
+    const { agent: viewer } = await signUp("guest");
+    expect((await viewer.get("/api/admin/status")).status).toBe(403);
+  });
+
   it("versions: auto-apply, safety block, apply, delete, duplicates, cleanup", async () => {
     const { agent } = await signUp("owner");
     const src = (await agent.post("/api/sources").send({ name: "White & Co", agencyName: "White & Co" })).body.source;

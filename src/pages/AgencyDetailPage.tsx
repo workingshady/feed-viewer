@@ -12,6 +12,7 @@ import { useFavorites } from "@/hooks/usePrefs";
 import { useLiveVersionStatus } from "@/hooks/useLiveVersionStatus";
 import { COMPARE_UPDATED_EVENT, getCompareListingIds } from "@/lib/compareSelection";
 import ListingAnalyticsDashboard from "@/components/analytics/ListingAnalyticsDashboard";
+import { AgencyLogo } from "@/components/AgencyLogo";
 
 type AgentRow = {
   name: string;
@@ -109,11 +110,7 @@ const AgencyDetailPage = () => {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
               <div className="w-14 h-14 rounded-xl bg-accent flex items-center justify-center overflow-hidden ring-1 ring-border shrink-0">
-                {agencyLogo ? (
-                  <img src={agencyLogo} alt={agencyName} className="w-full h-full object-cover" loading="lazy" />
-                ) : (
-                  <Building2 className="w-6 h-6 text-muted-foreground" />
-                )}
+                <AgencyLogo src={agencyLogo} name={agencyName} className="h-full w-full" />
               </div>
               <div className="min-w-0">
                 <h1 className="text-2xl font-extrabold font-heading text-foreground truncate">

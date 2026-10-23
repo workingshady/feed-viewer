@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAppData } from "@/providers/DataProvider";
 import { AGENCIES_DIRECTORY_SUBTITLE } from "@/lib/agencyDirectoryCopy";
+import { AgencyLogo } from "@/components/AgencyLogo";
 
 type AgencyRow = {
   name: string;
@@ -97,11 +98,7 @@ const AgenciesPage = () => {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex items-start gap-3">
                       <div className="w-16 h-16 rounded-xl bg-accent flex items-center justify-center overflow-hidden ring-1 ring-border shrink-0">
-                        {a.logo ? (
-                          <img src={a.logo} alt={a.name} className="w-full h-full object-cover" loading="lazy" />
-                        ) : (
-                          <Building2 className="w-6 h-6 text-muted-foreground" />
-                        )}
+                        <AgencyLogo src={a.logo} name={a.name} className="h-full w-full" />
                       </div>
                       <div className="min-w-0">
                         <div className="text-lg font-extrabold font-heading text-foreground truncate">{a.name}</div>

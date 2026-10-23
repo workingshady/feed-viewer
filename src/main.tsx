@@ -9,6 +9,8 @@ import "@fontsource/geist-mono/500.css";
 import "@fontsource/geist-mono/600.css";
 import App from "./App.tsx";
 import "./index.css";
+import { installGlobalErrorReporting } from "@/lib/telemetry";
 
+installGlobalErrorReporting();
 
 createRoot(document.getElementById("root")!).render(<App />);

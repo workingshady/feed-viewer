@@ -18,6 +18,7 @@ import { HealthDot, ScoreBadge, healthOf, healthReasons } from "./health";
 import { VersionRow } from "./VersionRow";
 import { ApplyVersionDialog, DeleteSourceDialog, DeleteVersionDialog } from "./VersionDialogs";
 import { pct } from "./format";
+import { AgencyLogo } from "@/components/AgencyLogo";
 
 function SettingsPopover({ source }: { source: SourceDTO }) {
   const update = useUpdateSource();
@@ -178,9 +179,7 @@ export function SourceDetail({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start gap-3">
-        {info?.logo ? (
-          <img src={info.logo} alt="" className="h-10 w-10 rounded-md border object-contain" loading="lazy" />
-        ) : null}
+        <AgencyLogo src={info?.logo} name={source.name} className="h-10 w-10 border" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-xl font-bold text-foreground">{source.name}</h2>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

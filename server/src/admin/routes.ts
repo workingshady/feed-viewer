@@ -54,9 +54,15 @@ adminRouter.get(
   "/audit",
   asyncHandler(async (req, res) => {
     const q = z
-      .object({ cursor: z.string().optional(), limit: z.coerce.number().int().min(1).max(200).default(50) })
+      .object({
+        cursor: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+        /** Action prefix filter, e.g. "version." or "client.error". */
+        prefix: z.string().max(40).optional(),
+      })
       .parse(req.query);
     const rows = await prisma.auditEvent.findMany({
+      where: q.prefix ? { action: { startsWith: q.prefix } } : undefined,
       take: q.limit + 1,
       ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],

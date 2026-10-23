@@ -47,12 +47,12 @@ export function SourceList({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-2">
-        <div className="relative flex-1">
+        <div className="relative min-w-0 flex-1">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search sources" className="pl-8" aria-label="Search sources" />
         </div>
         <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-          <SelectTrigger className="w-36" aria-label="Filter by health">
+          <SelectTrigger className="w-32 shrink-0 sm:w-36" aria-label="Filter by health">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

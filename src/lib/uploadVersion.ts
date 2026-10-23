@@ -15,6 +15,21 @@ import {
 } from "@/lib/sourcesApi";
 import type { ImportResult, Listing, MappingConfig } from "@/lib/types";
 
+/** Where an upload is, for progress display. `progress` is 0–1 within the stage when known. */
+export type UploadStage = {
+  stage: "reading" | "parsing" | "comparing" | "compressing" | "uploading" | "saving";
+  progress?: number;
+};
+
+export const STAGE_LABELS: Record<UploadStage["stage"], string> = {
+  reading: "Reading file",
+  parsing: "Reading listings",
+  comparing: "Comparing with the live version",
+  compressing: "Compressing",
+  uploading: "Uploading",
+  saving: "Saving version",
+};
+
 export type PreparedVersion = {
   file: File;
   xml: string;
@@ -54,8 +69,9 @@ async function mappingFingerprint(mapping: MappingConfig | null): Promise<string
 export async function prepareVersion(
   file: File,
   sources: SourceDTO[],
-  opts: { target?: SourceDTO | null; onProgress?: (p: { total: number; done: number }) => void } = {},
+  opts: { target?: SourceDTO | null; onStage?: (s: UploadStage) => void } = {},
 ): Promise<PreparedVersion> {
+  opts.onStage?.({ stage: "reading" });
   const xml = await file.text();
   const sha256 = await sha256Hex(xml);
   // A known target decides the mapping; otherwise peek at the agency with auto-detection first.
@@ -63,7 +79,7 @@ export async function prepareVersion(
   let result = await parseXmlStringAsync(xml, {
     mappingConfig: matched?.mapping ?? null,
     yieldMs: 18,
-    onProgress: opts.onProgress,
+    onProgress: (p) => opts.onStage?.({ stage: "parsing", progress: p.total ? p.done / p.total : 0 }),
   });
   if (!matched) {
     matched = matchSource(result.agencyInfo?.name, sources);
@@ -71,6 +87,7 @@ export async function prepareVersion(
   }
   const mapping = matched?.mapping ?? null;
   const live = matched ? liveVersionOf(matched) : null;
+  if (live) opts.onStage?.({ stage: "comparing" });
   const diff = live ? diffListings(await fetchVersionListings(live.listingsBlobUrl), result.listings) : null;
   return {
     file,
@@ -101,6 +118,7 @@ export async function commitVersion(
   p: PreparedVersion,
   target: CommitTarget,
   deps: CommitDeps = defaultDeps,
+  onStage?: (s: UploadStage) => void,
 ): Promise<RegisterResult & { source: SourceDTO | { id: string; name: string } }> {
   const source =
     "create" in target
@@ -114,10 +132,22 @@ export async function commitVersion(
   const uploadId = nanoid(16);
   const dir = `sources/${source.id}/${uploadId}`;
   const listings: Listing[] = p.result.listings;
+  onStage?.({ stage: "compressing" });
+  const xmlGz = gzipText(p.xml);
+  const listingsGz = gzipText(JSON.stringify(listings));
+  // Report combined progress of both files, weighted by size.
+  const total = xmlGz.length + listingsGz.length;
+  const done = [0, 0];
+  const progress = (i: number, size: number) => (share: number) => {
+    done[i] = share * size;
+    onStage?.({ stage: "uploading", progress: (done[0] + done[1]) / total });
+  };
+  onStage?.({ stage: "uploading", progress: 0 });
   const [xmlBlob, listingsBlob] = await Promise.all([
-    deps.uploadBlob(`${dir}/feed.xml.gz`, gzipText(p.xml)),
-    deps.uploadBlob(`${dir}/listings.json.gz`, gzipText(JSON.stringify(listings))),
+    deps.uploadBlob(`${dir}/feed.xml.gz`, xmlGz, progress(0, xmlGz.length)),
+    deps.uploadBlob(`${dir}/listings.json.gz`, listingsGz, progress(1, listingsGz.length)),
   ]);
+  onStage?.({ stage: "saving" });
 
   // A diff computed against another source's live version would be meaningless.
   const sameSource = p.matched?.id === source.id;

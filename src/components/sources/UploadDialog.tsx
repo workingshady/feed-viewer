@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { applyVersion, listSources, type RegisterResult, type SourceDTO } from "@/lib/sourcesApi";
-import { commitVersion, prepareVersion, type PreparedVersion } from "@/lib/uploadVersion";
+import { STAGE_LABELS, commitVersion, prepareVersion, type PreparedVersion, type UploadStage } from "@/lib/uploadVersion";
+import { Progress } from "@/components/ui/progress";
 import { diffCounts } from "@/lib/versionDiff";
 import { SOURCES_KEY } from "@/hooks/useSources";
 import { DiffBadges } from "./VersionRow";
@@ -21,7 +22,7 @@ type Row = {
   key: string;
   file: File;
   status: "queued" | "parsing" | "ready" | "saving" | "done" | "error";
-  progress?: number;
+  stage?: UploadStage;
   prepared?: PreparedVersion;
   /** Source id, or NEW to create one named `newName`. */
   target?: string;
@@ -31,6 +32,28 @@ type Row = {
 };
 
 const MAX_FILE_BYTES = 60 * 1024 * 1024;
+
+/** Step label plus a bar: determinate when the stage reports progress, indeterminate otherwise. */
+function StageProgress({ stage, step }: { stage: UploadStage; step: 1 | 2 }) {
+  const pct = stage.progress != null ? Math.round(stage.progress * 100) : null;
+  return (
+    <div className="space-y-1" aria-live="polite">
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>
+          Step {step} of 2 · {STAGE_LABELS[stage.stage]}…
+        </span>
+        {pct != null && <span className="font-mono tabular-nums">{pct}%</span>}
+      </div>
+      {pct != null ? (
+        <Progress value={pct} className="h-1.5" aria-label={STAGE_LABELS[stage.stage]} />
+      ) : (
+        <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+          <div className="h-full w-1/3 animate-[topbar_1.1s_ease-in-out_infinite] rounded-full bg-primary" />
+        </div>
+      )}
+    </div>
+  );
+}
 
 function errorText(e: unknown): string {
   if (e instanceof ApiError) {
@@ -80,11 +103,11 @@ export function UploadDialog({
         patch(row.key, { status: "error", error: `File is larger than ${formatBytes(MAX_FILE_BYTES)}.` });
         continue;
       }
-      patch(row.key, { status: "parsing", progress: 0 });
+      patch(row.key, { status: "parsing", stage: { stage: "reading" } });
       try {
         const prepared = await prepareVersion(row.file, sources, {
           target: fixedSource ?? null,
-          onProgress: (p) => patch(row.key, { progress: p.total ? p.done / p.total : 0 }),
+          onStage: (stage) => patch(row.key, { stage }),
         });
         if (!prepared.result.success || prepared.result.listings.length === 0) {
           patch(row.key, {
@@ -121,7 +144,7 @@ export function UploadDialog({
               }
             : fresh.find((s) => s.id === row.target);
         if (!target) throw new Error("That source no longer exists.");
-        const res = await commitVersion(row.prepared!, target);
+        const res = await commitVersion(row.prepared!, target, undefined, (stage) => patch(row.key, { stage }));
         lastSourceId = res.source.id;
         patch(row.key, { status: "done", result: { ...res, sourceId: res.source.id } });
       } catch (e) {
@@ -214,10 +237,9 @@ export function UploadDialog({
                   <span className="text-xs text-muted-foreground">{formatBytes(row.file.size)}</span>
                 </div>
 
-                {row.status === "parsing" && (
-                  <p className="text-xs text-muted-foreground">Reading listings… {Math.round((row.progress ?? 0) * 100)}%</p>
+                {(row.status === "parsing" || row.status === "saving") && row.stage && (
+                  <StageProgress stage={row.stage} step={row.status === "parsing" ? 1 : 2} />
                 )}
-                {row.status === "saving" && <p className="text-xs text-muted-foreground">Uploading and saving…</p>}
                 {row.status === "error" && <p className="text-xs text-destructive-text">{row.error}</p>}
 
                 {row.prepared && row.status === "ready" && (

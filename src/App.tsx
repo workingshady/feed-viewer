@@ -10,6 +10,10 @@ import { RequireAuth, RequireRole } from "@/components/auth/RequireAuth";
 import { AppCommandPalette } from "@/components/AppCommandPalette";
 import { CompareTray } from "@/components/CompareTray";
 import { SiteFooterGate } from "@/components/SiteFooter";
+import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { TopProgressBar } from "@/components/TopProgressBar";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 const Index = lazy(() => import("./pages/Index"));
 const SourcesPage = lazy(() => import("./pages/SourcesPage"));
@@ -100,9 +104,13 @@ function RouteFallback() {
 }
 
 const App = () => (
+  <AppErrorBoundary>
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
+      <TopProgressBar />
+      <Analytics />
+      <SpeedInsights />
       <AuthProvider>
         <DataProvider>
           <BrowserRouter>
@@ -151,6 +159,7 @@ const App = () => (
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
+  </AppErrorBoundary>
 );
 
 export default App;
