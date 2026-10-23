@@ -24,6 +24,12 @@ function getTextContent(el: Element, tag: string): string {
   return child?.textContent?.trim() || '';
 }
 
+/** Prefer the ISO code (<currency code="AED">UAE Dirham</currency>) over the display name. */
+function metadataCurrency(metaEl: Element): string {
+  const el = metaEl.getElementsByTagName('currency')[0];
+  return el?.getAttribute('code')?.trim() || el?.textContent?.trim() || 'AED';
+}
+
 const RENT_PERIODS = ['yearly', 'monthly', 'weekly', 'daily'] as const;
 
 function parseOfferingType(val: string): 'sale' | 'rent' | 'unknown' {
@@ -461,7 +467,7 @@ export function parseXmlString(xmlString: string, strictMode = false, mappingCon
 
   // Detect metadata
   const metaEl = doc.getElementsByTagName('metadata')[0];
-  const defaultCurrency = metaEl ? getTextContent(metaEl, 'currency') : 'AED';
+  const defaultCurrency = metaEl ? metadataCurrency(metaEl) : 'AED';
   const defaultAreaUnit = metaEl ? (getTextContent(metaEl, 'area_unit') || 'sqft') : 'sqft';
 
   // Find property nodes
@@ -568,7 +574,7 @@ export async function parseXmlStringAsync(
     : undefined;
 
   const metaEl = doc.getElementsByTagName("metadata")[0];
-  const defaultCurrency = metaEl ? getTextContent(metaEl, "currency") : "AED";
+  const defaultCurrency = metaEl ? metadataCurrency(metaEl) : "AED";
   const defaultAreaUnit = metaEl ? getTextContent(metaEl, "area_unit") || "sqft" : "sqft";
 
   const listingTag = (mappingConfig?.listingNodePath?.split(".").filter(Boolean).pop() || "property")

@@ -653,9 +653,6 @@ const ListingsPage = () => {
                 <Download className="w-3.5 h-3.5" /> CSV
               </Button>
 
-              <Button asChild size="sm" className="h-10 sm:h-9 min-h-[44px] sm:min-h-0 w-full sm:w-auto bg-secondary hover:bg-secondary/90 text-secondary-foreground rounded-full px-4 text-xs font-semibold shadow-md touch-manipulation justify-center">
-                <Link to="/sources">Sources</Link>
-              </Button>
               </div>
             </div>
             </div>
@@ -712,23 +709,23 @@ const ListingsPage = () => {
             <span className="tabular-nums">
               {filtered.length.toLocaleString()} listing{filtered.length === 1 ? "" : "s"}
             </span>
-            {filteredPriceStats.pricedCount > 0 && filteredPriceStats.avg != null && (
-              <>
-                <span className="hidden sm:inline text-border">·</span>
-                <span>
-                  Avg{" "}
+            {(["sale", "rent"] as const).map((purpose) => {
+              const st = filteredPriceStats[purpose];
+              if (!st) return null;
+              return (
+                <span key={purpose} className="inline-flex flex-wrap items-baseline gap-x-1.5">
+                  <span className="hidden text-border sm:inline">·</span>
+                  {purpose === "sale" ? "Sale" : "Rent"} {st.count.toLocaleString()} · median{" "}
                   <span className="font-semibold text-foreground">
-                    {filteredPriceStats.currency} {formatPriceCompact(filteredPriceStats.avg)}
+                    {filteredPriceStats.currency} {formatPriceCompact(st.median)}
+                    {purpose === "rent" ? "/yr" : ""}
+                  </span>
+                  <span className="hidden font-mono text-xs md:inline">
+                    ({formatPriceCompact(st.min)}–{formatPriceCompact(st.max)})
                   </span>
                 </span>
-                <span className="hidden md:inline">
-                  <span className="text-border">·</span> Range{" "}
-                  <span className="font-mono text-xs font-semibold text-foreground">
-                    {formatPriceCompact(filteredPriceStats.min!)} – {formatPriceCompact(filteredPriceStats.max!)}
-                  </span>
-                </span>
-              </>
-            )}
+              );
+            })}
             {filteredPriceStats.pricedCount === 0 && (
               <span className="text-xs">No numeric prices in this result set</span>
             )}

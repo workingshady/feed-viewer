@@ -27,3 +27,22 @@ export const RENT_PERIOD_LABEL: Record<string, string> = {
   weekly: "per week",
   daily: "per day",
 };
+
+const CURRENCY_CODES: Record<string, string> = {
+  "uae dirham": "AED",
+  "emirati dirham": "AED",
+  dirham: "AED",
+  "singapore dollar": "SGD",
+  "malaysian ringgit": "MYR",
+  "pakistani rupee": "PKR",
+  "us dollar": "USD",
+  "saudi riyal": "SAR",
+  "qatari riyal": "QAR",
+};
+
+/** ISO code for a currency given by code or name (older versions stored the name). */
+export function currencyCode(value: string | undefined | null): string {
+  const v = (value ?? "").trim();
+  if (/^[A-Za-z]{3}$/.test(v)) return v.toUpperCase();
+  return CURRENCY_CODES[v.toLowerCase()] ?? v;
+}

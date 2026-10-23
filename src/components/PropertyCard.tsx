@@ -121,7 +121,8 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
   const priceOk = isListingFieldFilled(listing, "price");
   const purposeLabel = listing.purpose === "sale" ? "For Sale" : listing.purpose === "rent" ? "For Rent" : "";
   const loc = listing.community || listing.city || listing.address || "Unknown location";
-  const priceEyebrow = listing.purpose === "rent" ? "Rent" : "Asking Price";
+  // The purpose badge and "per year" already say it's a rental; only sales get an eyebrow.
+  const priceEyebrow = listing.purpose === "sale" ? "Asking price" : "";
   const videoTourRaw = listing.videoTourUrl?.trim() ?? "";
   const videoTourHref = normalizeVideoTourPageUrl(videoTourRaw);
   const hasVideoTour = !!videoTourHref;
@@ -352,9 +353,11 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
       <div className="flex flex-col flex-1 min-w-0 p-5 sm:p-6 gap-3.5 overflow-hidden">
         <div className="flex items-start justify-between gap-2 min-w-0">
           <div className="min-w-0">
-            <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-[0.2em] mb-0.5">
-              {priceEyebrow}
-            </div>
+            {priceEyebrow && (
+              <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-[0.2em] mb-0.5">
+                {priceEyebrow}
+              </div>
+            )}
             <div
               className={cn(
                 "text-[22px] font-extrabold font-heading leading-tight tabular-nums tracking-tight",
@@ -515,7 +518,7 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
                 <span className="flex min-w-0 max-w-full items-center gap-1">
                   <Maximize className="w-3.5 h-3.5 shrink-0 text-primary-text/70" />
                   <span className="min-w-0 font-semibold text-foreground truncate tabular-nums">
-                    {listing.area.toLocaleString()} {listing.areaUnit}
+                    {Math.round(listing.area).toLocaleString()} {listing.areaUnit}
                   </span>
                 </span>
               )}
