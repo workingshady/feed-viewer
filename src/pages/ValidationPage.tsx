@@ -4,7 +4,7 @@ import { timeAgo } from "@/components/sources/format";
 import AppHeader from "@/components/AppHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -27,7 +27,6 @@ import { useAppData } from "@/providers/DataProvider";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
-  BarChart3,
   CheckCircle2,
   ChevronDown,
   ClipboardList,
@@ -44,23 +43,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { markHomeWorkflowValidationVisited } from "@/lib/homeWorkflowProgress";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
-import {
-  RECHARTS_BAR_CURSOR,
-  RECHARTS_TOOLTIP_CONTENT,
-  RECHARTS_TOOLTIP_PROPS,
-} from "@/lib/chartTheme";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { ChartCard, Columns, Donut, HBars, SERIES } from "@/components/charts/ChartKit";
 
 /** Values that occur more than once, in first-seen order. */
 function duplicatesBy<T>(rows: T[], key: (row: T) => string): string[] {
@@ -87,13 +70,19 @@ const STATUS_OPTIONS: ImportListingStatus[] = [
 
 type OverviewStatId = ImportListingStatus | "issues";
 
-const PIE_COLORS: Record<string, string> = {
-  New: "hsl(var(--primary))",
-  Updated: "hsl(var(--sb-slate))",
-  Unchanged: "hsl(var(--muted-foreground) / 0.65)",
-  Removed: "hsl(var(--destructive))",
-  Duplicate: "hsl(var(--warning))",
+/** Diff outcomes keep one colour each, whichever of them are present. */
+const DIFF_COLORS: Record<string, string> = {
+  New: SERIES[0],
+  Updated: SERIES[1],
+  Unchanged: SERIES[2],
+  Removed: SERIES[3],
+  Duplicate: SERIES[4],
 };
+
+const HEALTH_ISSUES = [
+  { key: "errs", label: "Parser errors", color: SERIES[0] },
+  { key: "warns", label: "Parser warnings", color: SERIES[1] },
+];
 
 function StatHint({ children }: { children: React.ReactNode }) {
   return (
@@ -611,231 +600,100 @@ const ValidationPage = () => {
 
 
               <div className="grid lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <BarChart3 className="w-4 h-4" />
-                      Change mix (this import)
-                    </CardTitle>
-                    <CardDescription>
-                      Share of listings by diff outcome. Click a slice or a legend row to filter the listing table.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {pieData.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-8 text-center">No listing diff data.</p>
-                    ) : (
-                      <div className="h-64 w-full min-w-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={pieData as { name: string; value: number; status: ImportListingStatus }[]}
-                              dataKey="value"
-                              nameKey="name"
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={52}
-                              outerRadius={80}
-                              paddingAngle={2}
-                              onClick={(_, index) => {
-                                const row = typeof index === "number" ? pieData[index] : undefined;
-                                if (row) {
-                                  setStatusQ(row.status);
-                                  setMainTab("listings");
-                                }
-                              }}
-                              className="cursor-pointer outline-none"
-                            >
-                              {pieData.map((entry) => (
-                                <Cell key={entry.name} fill={PIE_COLORS[entry.name] ?? "hsl(var(--primary))"} strokeWidth={0} />
-                              ))}
-                            </Pie>
-                            <RechartsTooltip
-                              {...RECHARTS_TOOLTIP_PROPS}
-                              cursor={false}
-                              contentStyle={{
-                                ...RECHARTS_TOOLTIP_CONTENT,
-                                maxWidth: "min(100vw - 1.5rem, 20rem)",
-                                whiteSpace: "normal",
-                                wordBreak: "break-word",
-                              }}
-                              formatter={(v: number) => [v, "Listings"]}
-                            />
-                            <Legend verticalAlign="bottom" formatter={(value) => <span className="text-xs text-foreground">{value}</span>} wrapperStyle={{ paddingTop: 12 }} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <div className="flex flex-wrap justify-center gap-2 mt-3" role="group" aria-label="Filter listing table by diff status">
-                          {pieData.map((row) => (
-                            <Button
-                              key={row.name}
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs gap-2"
-                              onClick={() => {
-                                setStatusQ(row.status);
-                                setMainTab("listings");
-                              }}
-                            >
-                              <span
-                                className="w-2 h-2 rounded-full shrink-0"
-                                style={{ background: PIE_COLORS[row.name] ?? "hsl(var(--primary))" }}
-                                aria-hidden
-                              />
-                              {row.name} ({row.value})
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                  <CardFooter className="border-t border-border/50 pt-3">
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Compares this import to the previous snapshot: new, updated, unchanged, removed, or duplicate rows.
-                      Slices are counts of listings, not XML nodes — use the buttons to filter the table below.
-                    </p>
-                  </CardFooter>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Issue breakdown</CardTitle>
-                    <CardDescription>
-                      Counts each <strong className="text-foreground">category</strong> separately so you can see whether
-                      problems are parser-level or mapping/structure.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-64 w-full min-w-0">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart
-                          data={issueBreakdownData}
-                          layout="vertical"
-                          margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                        >
-                          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                          <YAxis
-                            type="category"
-                            dataKey="name"
-                            width={118}
-                            tick={{ fontSize: 10 }}
-                            interval={0}
-                          />
-                          <RechartsTooltip
-                            {...RECHARTS_TOOLTIP_PROPS}
-                            cursor={RECHARTS_BAR_CURSOR as any}
-                            formatter={(v: number) => [v, "Count"]}
-                            labelFormatter={(_, payload) => {
-                              const p = payload?.[0]?.payload as { hint?: string; name?: string } | undefined;
-                              return p?.hint ? `${p.name}: ${p.hint}` : (p?.name ?? "");
-                            }}
-                          />
-                          <Bar
-                            dataKey="count"
-                            name="Issues"
-                            radius={[0, 4, 4, 0]}
-                            className="cursor-pointer outline-none"
-                            fill="hsl(var(--primary))"
-                            onClick={(data: { name?: string } | undefined) => {
-                              const name = data?.name;
-                              if (!name) return;
-                              if (name === "Parser errors" || name === "Parser warnings") setMainTab("issues");
-                              else setMainTab("conflicts");
-                            }}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-2">Click a bar to open Issues or Conflicts.</p>
-                  </CardContent>
-                  <CardFooter className="border-t border-border/50 pt-3">
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Each category is counted independently — one listing can contribute to parser errors and mapping
-                      conflicts. Long labels in the tooltip explain what we grouped together.
-                    </p>
-                  </CardFooter>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Feed health trend</CardTitle>
-                  <CardDescription>
-                    Recent imports: <strong className="text-foreground">listing volume</strong> vs{" "}
-                    <strong className="text-foreground">parser errors</strong>. Use it to spot sudden drops or rising
-                    failures.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {source.versions.length < 2 ? (
-                    <p className="text-sm text-muted-foreground py-6 border border-dashed border-border rounded-lg px-4 text-center">
-                      Upload at least two versions to compare runs. The selected version still appears in the issue charts
-                      above.
-                    </p>
+                <ChartCard
+                  title="Change mix (this version)"
+                  description="Share of listings by diff outcome. Use the buttons to filter the listing table."
+                  table={{ columns: ["Outcome", "Listings"], rows: pieData.map((r) => [r.name, r.value]) }}
+                >
+                  {pieData.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-8 text-center">No listing diff data.</p>
                   ) : (
-                    <div className="h-56 w-full min-w-0">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={healthChartData} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
-                          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={50} />
-                          <YAxis tick={{ fontSize: 11 }} allowDecimals={false} width={36} />
-                          <RechartsTooltip
-                            cursor={RECHARTS_BAR_CURSOR as any}
-                            content={({ active, payload }) => {
-                              if (!active || !payload?.length) return null;
-                              const row = payload[0].payload as (typeof healthChartData)[0];
-                              return (
-                                <div
-                                  className={cn(
-                                    "rounded-[0.625rem] border px-3.5 py-2.5 text-[12px] leading-snug antialiased",
-                                    "border-[hsl(var(--chart-tooltip-border))] bg-[hsl(var(--chart-tooltip-surface))]",
-                                    "text-[hsl(var(--popover-foreground))] shadow-[var(--chart-tooltip-shadow)]",
-                                    "max-w-[min(calc(100vw-1.5rem),18rem)]",
-                                  )}
-                                >
-                                  <p className="font-semibold text-[hsl(var(--chart-tooltip-title))] mb-1 break-words">
-                                    {row.fileName}
-                                  </p>
-                                  <p className="text-[hsl(var(--chart-tooltip-value))]/80 mb-2 text-[11px]">{row.fullDate}</p>
-                                  <ul className="space-y-1 tabular-nums text-[hsl(var(--chart-tooltip-value))]">
-                                    <li>
-                                      <span className="font-medium text-[hsl(var(--chart-tooltip-title))]">Listings</span>{" "}
-                                      {row.listings}
-                                    </li>
-                                    <li>
-                                      <span className="font-medium text-[hsl(var(--chart-tooltip-title))]">Parser errors</span>{" "}
-                                      {row.errs}
-                                    </li>
-                                    <li>
-                                      <span className="font-medium text-[hsl(var(--chart-tooltip-title))]">Parser warnings</span>{" "}
-                                      {row.warns}
-                                    </li>
-                                    <li>
-                                      <span className="font-medium text-[hsl(var(--chart-tooltip-title))]">All issues</span>{" "}
-                                      {row.issues}
-                                    </li>
-                                  </ul>
-                                </div>
-                              );
+                    <div className="space-y-4">
+                      <Donut
+                        centerLabel="listings"
+                        data={pieData.map((r) => ({ label: r.name, value: r.value, color: DIFF_COLORS[r.name] }))}
+                      />
+                      <div className="flex flex-wrap gap-2" role="group" aria-label="Filter listing table by diff status">
+                        {pieData.map((row) => (
+                          <Button
+                            key={row.name}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs gap-2"
+                            onClick={() => {
+                              setStatusQ(row.status);
+                              setMainTab("listings");
                             }}
-                          />
-                          <Legend />
-                          <Bar dataKey="listings" name="Listings" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                          <Bar dataKey="errs" name="Parser errors" fill="hsl(var(--destructive))" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
+                          >
+                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DIFF_COLORS[row.name] }} aria-hidden />
+                            {row.name} ({row.value})
+                          </Button>
+                        ))}
+                      </div>
                     </div>
                   )}
-                </CardContent>
-                {source.versions.length >= 2 ? (
-                  <CardFooter className="border-t border-border/50 pt-3">
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      Each cluster is one past import run. Green bars are listing volume; red overlay is parser error
-                      count on that file. Rising errors with flat volume can mean a regressing source file, not just more
-                      listings.
+                  <p className="text-[11px] leading-relaxed text-muted-foreground border-t border-border/50 pt-3">
+                    Compares this version to the previous one: new, updated, unchanged, removed, or duplicate listings. Counts
+                    are listings, not XML nodes.
+                  </p>
+                </ChartCard>
+
+                <ChartCard
+                  title="Issue breakdown"
+                  description="Each category counted separately, so you can see whether problems are parser-level or mapping/structure. Click a bar to open Issues or Conflicts."
+                  table={{ columns: ["Category", "Count", "What it means"], rows: issueBreakdownData.map((r) => [r.name, r.count, r.hint]) }}
+                >
+                  <HBars
+                    data={issueBreakdownData}
+                    labelKey="name"
+                    series={[{ key: "count", label: "Count", color: SERIES[0] }]}
+                    onSelect={(row) => {
+                      if (row.name === "Parser errors" || row.name === "Parser warnings") setMainTab("issues");
+                      else setMainTab("conflicts");
+                    }}
+                  />
+                  <p className="text-[11px] leading-relaxed text-muted-foreground border-t border-border/50 pt-3">
+                    Each category is counted independently — one listing can contribute to parser errors and mapping conflicts.
+                    The table view explains what each category groups together.
+                  </p>
+                </ChartCard>
+              </div>
+
+              {source.versions.length < 2 ? (
+                <Card>
+                  <CardContent className="py-6">
+                    <p className="text-sm text-muted-foreground border border-dashed border-border rounded-lg px-4 py-6 text-center">
+                      Upload at least two versions to see the feed health trend. The selected version still appears in the
+                      charts above.
                     </p>
-                  </CardFooter>
-                ) : null}
-              </Card>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <ChartCard
+                    title="Listings per version"
+                    description="Listing volume of the last uploads, oldest to newest. Sudden drops usually mean a broken export."
+                    table={{
+                      columns: ["Uploaded", "File", "Listings"],
+                      rows: healthChartData.map((r) => [r.fullDate, r.fileName, r.listings]),
+                    }}
+                  >
+                    <Columns data={healthChartData} xKey="label" series={[{ key: "listings", label: "Listings", color: SERIES[0] }]} />
+                  </ChartCard>
+                  <ChartCard
+                    title="Parser issues per version"
+                    description="Errors and warnings on each upload. Rising errors with flat volume point to a regressing source file."
+                    legend={HEALTH_ISSUES}
+                    table={{
+                      columns: ["Uploaded", "File", "Errors", "Warnings"],
+                      rows: healthChartData.map((r) => [r.fullDate, r.fileName, r.errs, r.warns]),
+                    }}
+                  >
+                    <Columns data={healthChartData} xKey="label" series={HEALTH_ISSUES} />
+                  </ChartCard>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="issues" className="space-y-6 mt-6 outline-none">

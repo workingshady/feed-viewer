@@ -33,7 +33,7 @@ function Sparkline({ source }: { source: SourceDTO }) {
     <div className="h-5 w-14 shrink-0" aria-hidden>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
-          <Line type="monotone" dataKey="n" stroke="hsl(var(--chart-line))" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="n" stroke="var(--series-1)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>

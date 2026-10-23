@@ -39,13 +39,11 @@ export type ListingAnalytics = {
   completionStatus: NamedCount[];
   furnished: NamedCount[];
   parking: NamedCount[];
-  avgPriceByBeds: { beds: string; avgPrice: number; count: number }[];
   scatterPriceArea: { price: number; area: number; purpose: Listing["purpose"] }[];
   agentsByVolume: NamedCount[];
   /** Built-area histogram (same shape as price bands). */
   areaHistogram: HistogramBin[];
   /** Mean asking price per property-type label (priced rows only). */
-  avgPriceByPropertyType: { name: string; avgPrice: number; count: number }[];
   /** Share of listings where key fields are populated (feed quality). */
   fieldCoverage: { label: string; filled: number; pct: number }[];
   /** Listing count by photo bucket. */
@@ -205,50 +203,16 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
         }
       : null;
 
-  // Built-area histogram (same bin logic as price; labels use area-friendly ticks)
-  let areaHistogram: HistogramBin[] = [];
-  if (sortedAreas.length > 0) {
-    const mn = sortedAreas[0];
-    const mx = sortedAreas[sortedAreas.length - 1];
-    const binCount = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(sortedAreas.length))));
-    if (mn === mx) {
-      areaHistogram = [{ label: formatAreaTick(mn), count: sortedAreas.length, min: mn, max: mx }];
-    } else {
-      const step = (mx - mn) / binCount;
-      areaHistogram = Array.from({ length: binCount }, (_, i) => {
-        const bmin = mn + step * i;
-        const bmax = i === binCount - 1 ? mx : mn + step * (i + 1);
-        return { label: `${formatAreaTick(bmin)}–${formatAreaTick(bmax)}`, count: 0, min: bmin, max: bmax };
-      });
-      for (const ar of sortedAreas) {
-        let i = Math.floor((ar - mn) / step);
-        if (i >= binCount) i = binCount - 1;
-        if (i < 0) i = 0;
-        areaHistogram[i].count++;
-      }
-    }
-  }
-
-  // Avg price by bedroom (only priced)
-  const byBed = new Map<number, { sum: number; n: number }>();
-  for (const l of listings) {
-    const p = safeNum(l.price);
-    if (!(Number.isFinite(l.price) && p > 0)) continue;
-    const b = Math.round(safeNum(l.beds));
-    const key = Number.isFinite(b) && b >= 0 ? b : -1;
-    const cur = byBed.get(key) ?? { sum: 0, n: 0 };
-    cur.sum += p;
-    cur.n++;
-    byBed.set(key, cur);
-  }
-  const avgPriceByBeds = Array.from(byBed.entries())
-    .filter(([k]) => k >= 0)
-    .sort((a, b) => a[0] - b[0])
-    .map(([beds, { sum, n }]) => ({
-      beds: `${beds} bed${beds === 1 ? "" : "s"}`,
-      avgPrice: sum / n,
-      count: n,
-    }));
+  // Built-area bands in sqft. Fixed, readable edges: one plot or warehouse would otherwise
+  // stretch equal-width bins so far that every apartment lands in the first bar.
+  const AREA_EDGES = [500, 750, 1000, 1500, 2000, 3000, 5000, 10000];
+  const areaHistogram: HistogramBin[] = [0, ...AREA_EDGES].map((lo, i) => {
+    const hi = AREA_EDGES[i] ?? Infinity;
+    const label = hi === Infinity ? `${formatAreaTick(lo)}+` : lo === 0 ? `< ${formatAreaTick(hi)}` : `${formatAreaTick(lo)}–${formatAreaTick(hi)}`;
+    return { label, count: 0, min: lo, max: hi };
+  });
+  for (const ar of sortedAreas) areaHistogram[areaHistogram.findIndex((b) => ar < b.max)].count++;
+  while (areaHistogram.length > 1 && areaHistogram[areaHistogram.length - 1].count === 0) areaHistogram.pop();
 
   // Scatter sample (cap for perf)
   const scatterFull: { price: number; area: number; purpose: Listing["purpose"] }[] = [];
@@ -266,21 +230,6 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 20);
-
-  const byPropType = new Map<string, { sum: number; n: number }>();
-  for (const l of listings) {
-    const p = safeNum(l.price);
-    if (!(p > 0)) continue;
-    const pt = (l.propertyType || "").trim() || "—";
-    const cur = byPropType.get(pt) ?? { sum: 0, n: 0 };
-    cur.sum += p;
-    cur.n++;
-    byPropType.set(pt, cur);
-  }
-  const avgPriceByPropertyType = Array.from(byPropType.entries())
-    .map(([name, { sum, n }]) => ({ name, avgPrice: sum / n, count: n }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 14);
 
   const denom = total || 1;
   const coveragePct = (filled: number) => Math.round((filled / denom) * 1000) / 10;
@@ -333,11 +282,9 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
     completionStatus: bucketMap(listings, (l) => (l.completionStatus || "").trim() || "—", 8),
     furnished: bucketMap(listings, (l) => (l.furnished || "").trim() || "—", 8),
     parking: bucketNumeric(listings, (l) => safeNum(l.parking), (n) => `${Math.round(n)}`),
-    avgPriceByBeds,
     scatterPriceArea,
     agentsByVolume,
     areaHistogram,
-    avgPriceByPropertyType,
     fieldCoverage,
     imageBuckets,
     developers,

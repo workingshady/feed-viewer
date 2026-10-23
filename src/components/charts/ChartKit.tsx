@@ -51,6 +51,75 @@ export function Legend({ series }: { series: { label: string; color: string }[] 
   );
 }
 
+/** Chart/table toggle and CSV download buttons for a chart header. */
+export function ChartTableActions({
+  title,
+  table,
+  asTable,
+  onToggle,
+}: {
+  title: string;
+  table: TableData;
+  asTable: boolean;
+  onToggle: () => void;
+}) {
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        aria-label={asTable ? "Show chart" : "Show table"}
+        title={asTable ? "Show chart" : "Show table"}
+        onClick={onToggle}
+      >
+        {asTable ? <BarChart3 className="h-4 w-4" /> : <Table2 className="h-4 w-4" />}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        aria-label="Download CSV"
+        title="Download CSV"
+        onClick={() => downloadText(`${slug}.csv`, toCsv(table.columns, table.rows))}
+      >
+        <Download className="h-4 w-4" />
+      </Button>
+    </>
+  );
+}
+
+/** The table view of a chart: first column is the label, the rest are right-aligned numbers. */
+export function DataTable({ table }: { table: TableData }) {
+  return (
+    <div className="max-h-80 overflow-auto rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {table.columns.map((c, i) => (
+              <TableHead key={c} className={cn("h-8 text-xs", i > 0 && "text-right")}>
+                {c}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {table.rows.map((r, i) => (
+            <TableRow key={i}>
+              {r.map((v, j) => (
+                <TableCell key={j} className={cn("py-1.5 text-xs", j > 0 && "text-right font-mono tabular-nums")}>
+                  {typeof v === "number" ? fmt(v) : v}
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 /**
  * Card wrapper for every chart: title, optional legend (shown for 2+ series), and a chart/table
  * toggle so the numbers are always readable without colour. The table can be downloaded as CSV.
@@ -73,9 +142,8 @@ export function ChartCard({
   children: ReactNode;
 }) {
   const [asTable, setAsTable] = useState(false);
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   return (
-    <Card className={cn("flex min-w-0 flex-col", className)}>
+    <Card className={cn("flex flex-col", className)}>
       <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
         <div className="min-w-0 space-y-1">
           <CardTitle className="text-sm">{title}</CardTitle>
@@ -83,62 +151,12 @@ export function ChartCard({
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {actions}
-          {table && (
-            <>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                aria-label={asTable ? "Show chart" : "Show table"}
-                title={asTable ? "Show chart" : "Show table"}
-                onClick={() => setAsTable((v) => !v)}
-              >
-                {asTable ? <BarChart3 className="h-4 w-4" /> : <Table2 className="h-4 w-4" />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                aria-label="Download CSV"
-                title="Download CSV"
-                onClick={() => downloadText(`${slug}.csv`, toCsv(table.columns, table.rows))}
-              >
-                <Download className="h-4 w-4" />
-              </Button>
-            </>
-          )}
+          {table && <ChartTableActions title={title} table={table} asTable={asTable} onToggle={() => setAsTable((v) => !v)} />}
         </div>
       </CardHeader>
       <CardContent className="flex-1 space-y-3">
         {legend && legend.length > 1 && !asTable && <Legend series={legend} />}
-        {asTable && table ? (
-          <div className="max-h-80 overflow-auto rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  {table.columns.map((c, i) => (
-                    <TableHead key={c} className={cn("h-8 text-xs", i > 0 && "text-right")}>
-                      {c}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {table.rows.map((r, i) => (
-                  <TableRow key={i}>
-                    {r.map((v, j) => (
-                      <TableCell key={j} className={cn("py-1.5 text-xs", j > 0 && "text-right font-mono tabular-nums")}>
-                        {typeof v === "number" ? fmt(v) : v}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          children
-        )}
+        {asTable && table ? <DataTable table={table} /> : children}
       </CardContent>
     </Card>
   );

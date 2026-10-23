@@ -2,19 +2,6 @@ import { useListingsWithRawXml } from "@/hooks/useListingRawXml";
 import { Fragment, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
   AlertTriangle,
   BarChart3,
   ClipboardList,
@@ -44,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { RECHARTS_BAR_CURSOR, RECHARTS_TOOLTIP_PROPS } from "@/lib/chartTheme";
+import { ChartTableActions, Columns, DataTable, Donut, HBars, SERIES, type TableData } from "@/components/charts/ChartKit";
 import {
   XML_EDA_MAX_LISTINGS_CEILING,
   XML_EDA_MAX_PATHS_CEILING,
@@ -77,10 +64,9 @@ import { liveVersionOf, type SourceDTO, type VersionDTO } from "@/lib/sourcesApi
 import { useAppData } from "@/providers/DataProvider";
 import { cn } from "@/lib/utils";
 
-const CHART_TOOLTIP_BAR = { ...RECHARTS_TOOLTIP_PROPS, cursor: RECHARTS_BAR_CURSOR as any };
-const CHART_TOOLTIP_PIE = { ...RECHARTS_TOOLTIP_PROPS, cursor: false as const };
-const BAR_COLORS = ["hsl(var(--primary))", "hsl(var(--sb-amber))", "hsl(var(--sb-slate))"];
-const PIE_COLORS = ["hsl(var(--success))", "hsl(var(--sb-rose))"];
+const LISTINGS = [{ key: "count", label: "Listings", color: SERIES[0] }];
+const COVERAGE = [{ key: "pct", label: "Coverage %", color: SERIES[0] }];
+const pctFmt = (n: number) => `${Math.round(n)}%`;
 type DashboardTab = "overview" | "mapped" | "xml" | "segments" | "patterns" | "report";
 type SortKey = "label" | "filled" | "missing" | "pct";
 type SortDir = "asc" | "desc";
@@ -341,6 +327,16 @@ function FieldQualityBody({
 
   const fieldCoverageBuckets = useMemo(() => computeFieldCoverageBuckets(presenceRows), [presenceRows]);
   const imageCountBuckets = useMemo(() => computeImageCountDistribution(analyticsListings), [analyticsListings]);
+  const segmentBars = useMemo(
+    () =>
+      segmentRows.map((r) => ({
+        label: r.segment.length > 28 ? `${r.segment.slice(0, 26)}…` : r.segment,
+        meanMissing: r.meanMissing,
+        avgCoveragePct: r.avgCoveragePct,
+        count: r.count,
+      })),
+    [segmentRows],
+  );
 
   const missingDistSorted = useMemo(() => {
     const arr = [...missingDist];
@@ -766,6 +762,8 @@ function FieldQualityBody({
                   description={`The ${coverageBarLimit} weakest mapped fields by % of listings with a value (${coverageFieldScope === "required" ? "required fields only" : "full schema"}). Order by only changes bar sequence—the same fields stay in the chart.`}
                   footnote="Each bar is the percentage of listings in the current analysis scope where this field is considered filled (see mapped schema rules). Compare with “Highest field coverage” to see whether gaps are concentrated in a few attributes or spread across many."
                   icon={ListChecks}
+                
+                  table={{ columns: ["Field", "Coverage %", "Filled", "Empty"], rows: coverageLowest.map((r) => [r.label, r.pct, r.filled, r.missing]) }}
                 >
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     <Label className="text-xs text-muted-foreground shrink-0">Order by</Label>
@@ -785,23 +783,7 @@ function FieldQualityBody({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="h-[min(22rem,55vh)] w-full min-w-0 overflow-x-auto">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={320}>
-                      <BarChart layout="vertical" data={coverageLowest} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
-                        <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10 }} />
-                        <YAxis type="category" dataKey="label" width={118} tick={{ fontSize: 9 }} interval={0} />
-                        <RechartsTooltip
-                          {...CHART_TOOLTIP_BAR}
-                          formatter={(v: number, _n: string, item: { payload?: { filled?: number; missing?: number } }) => {
-                            const p = item?.payload;
-                            return [`${v}% · ${p?.filled ?? "—"} filled / ${p?.missing ?? "—"} empty`, "Coverage"];
-                          }}
-                        />
-                        <Bar dataKey="pct" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} name="Coverage %" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <HBars data={coverageLowest} labelKey="label" series={COVERAGE} valueFormat={pctFmt} max={100} />
                 </ChartCard>
 
                 <ChartCard
@@ -809,6 +791,8 @@ function FieldQualityBody({
                   description={`The ${coverageBarLimit} strongest mapped fields by the same coverage definition as the lowest chart. Order by only reorders bars; the set of fields is still the top ${coverageBarLimit} by coverage.`}
                   footnote="High bars are expected for core identifiers (reference, title). If optional marketing fields also score high, the feed is rich; if only a handful are high, prioritize mapping the long tail in the lowest-coverage chart."
                   icon={ListChecks}
+                
+                  table={{ columns: ["Field", "Coverage %", "Filled", "Empty"], rows: coverageHighest.map((r) => [r.label, r.pct, r.filled, r.missing]) }}
                 >
                   <div className="flex flex-wrap items-center gap-2 mb-2">
                     <Label className="text-xs text-muted-foreground shrink-0">Order by</Label>
@@ -828,23 +812,7 @@ function FieldQualityBody({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="h-[min(22rem,55vh)] w-full min-w-0 overflow-x-auto">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={320}>
-                      <BarChart layout="vertical" data={coverageHighest} margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
-                        <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 10 }} />
-                        <YAxis type="category" dataKey="label" width={118} tick={{ fontSize: 9 }} interval={0} />
-                        <RechartsTooltip
-                          {...CHART_TOOLTIP_BAR}
-                          formatter={(v: number, _n: string, item: { payload?: { filled?: number; missing?: number } }) => {
-                            const p = item?.payload;
-                            return [`${v}% · ${p?.filled ?? "—"} filled / ${p?.missing ?? "—"} empty`, "Coverage"];
-                          }}
-                        />
-                        <Bar dataKey="pct" fill="hsl(var(--success))" radius={[0, 6, 6, 0]} name="Coverage %" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <HBars data={coverageHighest} labelKey="label" series={COVERAGE} valueFormat={pctFmt} max={100} />
                 </ChartCard>
               </div>
 
@@ -854,6 +822,8 @@ function FieldQualityBody({
                   description="Per-listing count of empty mapped fields; bucket labels match the mapped schema rules."
                   footnote="Re-ordering only changes bar sequence, not values. “Complete (0 gaps)” means every mapped field (except id/rawXml) passes fill rules. A heavy tail toward high gap counts signals systematic mapping or source issues."
                   icon={AlertTriangle}
+                
+                  table={{ columns: ["Empty fields", "Listings"], rows: missingDistSorted.map((r) => [r.label, r.count]) }}
                 >
                   <div className="flex flex-wrap justify-end gap-2 mb-2">
                     <Select value={missingDistOrder} onValueChange={(v) => setMissingDistOrder(v as MissingDistOrder)}>
@@ -867,21 +837,7 @@ function FieldQualityBody({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="h-[min(22rem,55vh)] w-full min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={missingDistSorted} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" vertical={false} />
-                        <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-18} textAnchor="end" height={68} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={36} />
-                        <RechartsTooltip {...CHART_TOOLTIP_BAR} formatter={(v: number) => [v, "Listings"]} />
-                        <Bar dataKey="count" radius={[6, 6, 0, 0]} name="Listings">
-                          {missingDistSorted.map((_, i) => (
-                            <Cell key={i} fill={BAR_COLORS[i % BAR_COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <Columns data={missingDistSorted.map((r) => ({ label: r.label, count: r.count }))} xKey="label" series={LISTINGS} height={280} />
                 </ChartCard>
 
                 <ChartCard
@@ -889,28 +845,14 @@ function FieldQualityBody({
                   description="Share of listings where reference, title, price (or POA), purpose, and property type all validate."
                   footnote="This is a strict gate for “publishable minimum” data, not overall richness. A large red slice means many rows fail at least one required attribute—fix those before worrying about optional media or amenities."
                   icon={PieChartIcon}
+                
+                  table={{ columns: ["Status", "Listings"], rows: pieRequiredData.map((r) => [r.name, r.value]) }}
                 >
-                  <div className="h-[min(22rem,55vh)] w-full min-w-0 flex flex-col items-center justify-center">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={pieRequiredData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={58}
-                          outerRadius={88}
-                          paddingAngle={2}
-                        >
-                          {pieRequiredData.map((_, i) => (
-                            <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                          ))}
-                        </Pie>
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                        <RechartsTooltip {...CHART_TOOLTIP_PIE} formatter={(v: number) => [v, "Listings"]} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                                    <div className="flex min-h-56 items-center">
+                    <Donut
+                      centerLabel="listings"
+                      data={pieRequiredData.map((r, i) => ({ label: r.name, value: r.value, color: SERIES[i] }))}
+                    />
                   </div>
                 </ChartCard>
               </div>
@@ -921,21 +863,14 @@ function FieldQualityBody({
                   description="Counts how many mapped fields fall into each population band (% of listings with that field filled)."
                   footnote="One row per schema field, grouped by its coverage percentage. Many fields in the left bands mean the feed is globally thin; a tall 80–100% bar with small counts elsewhere means only a few weak fields need attention."
                   icon={BarChart3}
+                
+                  table={{ columns: ["Coverage band", "Mapped fields"], rows: fieldCoverageBuckets.map((b) => [b.band, b.fieldCount]) }}
                 >
-                  <div className="h-[min(18rem,45vh)] w-full min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={fieldCoverageBuckets.map((b) => ({ label: b.band, fields: b.fieldCount }))}
-                        margin={{ top: 8, right: 8, left: 4, bottom: 4 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" vertical={false} />
-                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={36} />
-                        <RechartsTooltip {...CHART_TOOLTIP_BAR} formatter={(v: number) => [v, "Mapped fields"]} />
-                        <Bar dataKey="fields" fill="hsl(var(--secondary))" radius={[6, 6, 0, 0]} name="Field count" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <Columns
+                    data={fieldCoverageBuckets.map((b) => ({ label: b.band, fields: b.fieldCount }))}
+                    xKey="label"
+                    series={[{ key: "fields", label: "Mapped fields", color: SERIES[0] }]}
+                  />
                 </ChartCard>
 
                 <ChartCard
@@ -943,18 +878,10 @@ function FieldQualityBody({
                   description="How many listings fall into each image-count bucket (length of the images array)."
                   footnote="Granular media depth: 0 photos blocks most portals; 6+ often indicates a full marketing set. Compare before/after imports or between sale vs rent using the purpose filter in Dataset."
                   icon={ImageIconLucide}
+                
+                  table={{ columns: ["Photos", "Listings"], rows: imageCountBuckets.map((b) => [b.label, b.count]) }}
                 >
-                  <div className="h-[min(18rem,45vh)] w-full min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={imageCountBuckets} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" vertical={false} />
-                        <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={36} />
-                        <RechartsTooltip {...CHART_TOOLTIP_BAR} formatter={(v: number) => [v, "Listings"]} />
-                        <Bar dataKey="count" fill="hsl(var(--sb-amber))" radius={[6, 6, 0, 0]} name="Listings" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <Columns data={imageCountBuckets.map((b) => ({ label: b.label, count: b.count }))} xKey="label" series={LISTINGS} />
                 </ChartCard>
               </div>
 
@@ -1335,36 +1262,14 @@ function FieldQualityBody({
                   description={`Top ${segmentTopK} segments by listing count in the current analysis scope. Bar length = average missing mapped fields per listing in that segment.`}
                   footnote="Compare segments with similar volume (see listing-count chart). A high mean-missing bar on a large segment is more urgent than the same bar on a tiny niche segment."
                   icon={BarChart3}
+                
+                  table={{ columns: ["Segment", "Mean empty fields", "Listings"], rows: segmentRows.map((r) => [r.segment, r.meanMissing, r.count]) }}
                 >
-                  <div className="h-[min(22rem,50vh)] w-full min-w-0 overflow-x-auto">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={280}>
-                      <BarChart
-                        layout="vertical"
-                        data={segmentRows.map((r) => ({
-                          label: r.segment.length > 28 ? `${r.segment.slice(0, 26)}…` : r.segment,
-                          full: r.segment,
-                          meanMissing: r.meanMissing,
-                          count: r.count,
-                        }))}
-                        margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 10 }} />
-                        <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 9 }} interval={0} />
-                        <RechartsTooltip
-                          {...CHART_TOOLTIP_BAR}
-                          formatter={(v: number, _n: string, item: { payload?: { full?: string; count?: number } }) => {
-                            const p = item?.payload;
-                            return [
-                              `${v} empty / listing · ${p?.count ?? "—"} listings`,
-                              p?.full ?? "",
-                            ];
-                          }}
-                        />
-                        <Bar dataKey="meanMissing" fill="hsl(var(--sb-amber))" radius={[0, 6, 6, 0]} name="Mean missing" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <HBars
+                    data={segmentBars}
+                    labelKey="label"
+                    series={[{ key: "meanMissing", label: "Mean empty fields", color: SERIES[0] }]}
+                  />
                 </ChartCard>
 
                 <ChartCard
@@ -1372,33 +1277,16 @@ function FieldQualityBody({
                   description="Same segments as the previous chart: mean percentage of mapped fields filled per listing within each segment."
                   footnote="100% would mean every listing in that segment fills every mapped field. Rent vs sale (purpose filter + segment) often diverges here if feeds treat tenancies differently."
                   icon={ListChecks}
+                
+                  table={{ columns: ["Segment", "Avg coverage %", "Listings"], rows: segmentRows.map((r) => [r.segment, r.avgCoveragePct, r.count]) }}
                 >
-                  <div className="h-[min(22rem,50vh)] w-full min-w-0 overflow-x-auto">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={280}>
-                      <BarChart
-                        layout="vertical"
-                        data={segmentRows.map((r) => ({
-                          label: r.segment.length > 28 ? `${r.segment.slice(0, 26)}…` : r.segment,
-                          full: r.segment,
-                          avgCoveragePct: r.avgCoveragePct,
-                          count: r.count,
-                        }))}
-                        margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
-                        <XAxis type="number" domain={[0, 100]} tickFormatter={(x) => `${x}%`} tick={{ fontSize: 10 }} />
-                        <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 9 }} interval={0} />
-                        <RechartsTooltip
-                          {...CHART_TOOLTIP_BAR}
-                          formatter={(v: number, _n: string, item: { payload?: { full?: string; count?: number } }) => {
-                            const p = item?.payload;
-                            return [`${v}% · ${p?.count ?? "—"} listings`, p?.full ?? "Coverage"];
-                          }}
-                        />
-                        <Bar dataKey="avgCoveragePct" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} name="Avg coverage %" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <HBars
+                    data={segmentBars}
+                    labelKey="label"
+                    series={[{ key: "avgCoveragePct", label: "Avg coverage %", color: SERIES[0] }]}
+                    valueFormat={pctFmt}
+                    max={100}
+                  />
                 </ChartCard>
 
                 <ChartCard
@@ -1406,32 +1294,10 @@ function FieldQualityBody({
                   description="How many listings fall into each displayed segment (same ordering as the other two charts)."
                   footnote="Use this as a weighting key: sparse segments can look noisy in mean-missing charts. “—” and long-tail cities/communities often appear when data is messy."
                   icon={BarChart3}
+                
+                  table={{ columns: ["Segment", "Listings"], rows: segmentRows.map((r) => [r.segment, r.count]) }}
                 >
-                  <div className="h-[min(22rem,50vh)] w-full min-w-0 overflow-x-auto">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={280}>
-                      <BarChart
-                        layout="vertical"
-                        data={segmentRows.map((r) => ({
-                          label: r.segment.length > 28 ? `${r.segment.slice(0, 26)}…` : r.segment,
-                          full: r.segment,
-                          count: r.count,
-                        }))}
-                        margin={{ top: 4, right: 12, left: 4, bottom: 4 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" horizontal={false} />
-                        <XAxis type="number" tick={{ fontSize: 10 }} />
-                        <YAxis type="category" dataKey="label" width={100} tick={{ fontSize: 9 }} interval={0} />
-                        <RechartsTooltip
-                          {...CHART_TOOLTIP_BAR}
-                          formatter={(v: number, _n: string, item: { payload?: { full?: string } }) => {
-                            const p = item?.payload;
-                            return [`${v} listings`, p?.full ?? ""];
-                          }}
-                        />
-                        <Bar dataKey="count" fill="hsl(var(--sb-slate))" radius={[0, 6, 6, 0]} name="Listings" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                                    <HBars data={segmentBars} labelKey="label" series={LISTINGS} />
                 </ChartCard>
               </div>
 
@@ -1587,6 +1453,7 @@ function ChartCard({
   description,
   footnote,
   icon: Icon,
+  table,
   children,
 }: {
   title: string;
@@ -1594,19 +1461,29 @@ function ChartCard({
   /** How to read the chart and what actions to take — shown under the plot. */
   footnote?: string;
   icon: ComponentType<{ className?: string }>;
+  /** Table view + CSV of the plotted numbers. */
+  table?: TableData;
   children: ReactNode;
 }) {
+  const [asTable, setAsTable] = useState(false);
   return (
     <Card className="border-primary/12 shadow-none overflow-hidden">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-base font-heading flex items-center gap-2">
-          <Icon className="w-4 h-4 text-primary-text" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0 pb-2">
+        <div className="min-w-0 space-y-1.5">
+          <CardTitle className="text-base font-heading flex items-center gap-2">
+            <Icon className="w-4 h-4 text-primary-text" />
+            {title}
+          </CardTitle>
+          <CardDescription>{description}</CardDescription>
+        </div>
+        {table ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <ChartTableActions title={title} table={table} asTable={asTable} onToggle={() => setAsTable((v) => !v)} />
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent className="pb-4">
-        {children}
+        {asTable && table ? <DataTable table={table} /> : children}
         {footnote ? (
           <p className="text-[11px] text-muted-foreground leading-relaxed border-t border-border/60 mt-3 pt-3">{footnote}</p>
         ) : null}

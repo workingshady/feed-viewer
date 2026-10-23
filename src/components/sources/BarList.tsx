@@ -40,7 +40,7 @@ export function BarList({
             </div>
             <div className="h-1.5 rounded-full bg-muted">
               <div
-                className={`h-1.5 rounded-full ${selected === b.label ? "bg-primary" : "bg-[hsl(var(--chart-line))]"}`}
+                className={`h-1.5 rounded-full ${selected === b.label ? "bg-primary" : "bg-[var(--series-1)]"}`}
                 style={{ width: `${(b.count / max) * 100}%` }}
               />
             </div>
