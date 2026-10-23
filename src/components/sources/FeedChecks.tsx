@@ -52,6 +52,30 @@ export function FeedChecksSummary({ result, limit = 4 }: { result: FeedCheckResu
   );
 }
 
+/** Expected published count on Ziba with the reasons the rest are held back. */
+function ForecastBar({ forecast, total }: { forecast: NonNullable<FeedCheckResult["forecast"]>; total: number }) {
+  const pct = total ? Math.round((forecast.publishable / total) * 100) : 0;
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm font-medium">Expected on Ziba</span>
+        <span className="font-mono text-sm tabular-nums">
+          {forecast.publishable.toLocaleString()} of {total.toLocaleString()} · {pct}%
+        </span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+        <div className="h-full rounded-full bg-[var(--series-1)]" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {forecast.dropped.length
+          ? `Held back: ${forecast.dropped.map((d) => `${d.reason.toLowerCase()} ${d.count.toLocaleString()}`).join(" · ")}. `
+          : "Nothing held back by the feed itself. "}
+        Listings whose image links turn out broken become drafts after import, so the live count can be lower.
+      </p>
+    </div>
+  );
+}
+
 /** Full grouped report: one row per rule with count, share, fix hint and example listings. */
 export function FeedChecksCard({
   result,
@@ -85,7 +109,8 @@ export function FeedChecksCard({
           <Download className="mr-1.5 h-4 w-4" /> Check report (CSV)
         </Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        {result.forecast && <ForecastBar forecast={result.forecast} total={result.listingCount} />}
         {result.issues.length === 0 ? (
           <p className="text-sm text-success">Every listing passes every feed check.</p>
         ) : (

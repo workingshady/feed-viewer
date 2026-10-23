@@ -100,3 +100,45 @@ describe("agent concentration", () => {
     expect(c.issues.find((i) => i.code === "agent_concentration")).toMatchObject({ severity: "warning", count: 120 });
   });
 });
+
+describe("Ziba import checks", () => {
+  const base = { ...checkFeedBase() };
+  function checkFeedBase() {
+    return {
+      id: "x",
+      reference: "R-1",
+      title: "t",
+      description: "d".repeat(250),
+      price: 1_000_000,
+      priceOnApplication: "",
+      purpose: "sale" as const,
+      propertyType: "Apartment",
+      city: "Dubai",
+      community: "Marina",
+      currency: "AED",
+      images: ["https://img/1.jpg"],
+      agent: { name: "A", phone: "1", email: "a@x.ae", photo: "" },
+    };
+  }
+  const L = (o: Record<string, unknown>) => ({ ...base, ...o }) as unknown as Parameters<typeof checkFeed>[0][number];
+
+  it("forecasts POA, expiring images and missing photos as held back", () => {
+    const r = checkFeed([
+      L({ reference: "A" }),
+      L({ reference: "B", priceOnApplication: "Yes", price: 0 }),
+      L({ reference: "C", images: ["https://b.s3.amazonaws.com/p.jpg?X-Amz-Expires=3600&X-Amz-Signature=abc"] }),
+      L({ reference: "D", images: [] }),
+    ]);
+    expect(r.forecast?.publishable).toBe(1);
+    const codes = r.issues.map((i) => i.code);
+    expect(codes).toEqual(expect.arrayContaining(["poa_not_published", "expiring_image_urls", "small_feed"]));
+  });
+
+  it("reports agents merged by a shared email", () => {
+    const r = checkFeed([
+      L({ reference: "A", agent: { name: "Ann", email: "info@x.ae", phone: "1", photo: "" } }),
+      L({ reference: "B", agent: { name: "Bob", email: "info@x.ae", phone: "1", photo: "" } }),
+    ]);
+    expect(r.issues.find((i) => i.code === "agents_share_email")?.title).toBe("2 agents become 1 profile on import");
+  });
+});

@@ -27,7 +27,14 @@ export type FeedCheckResult = {
   rentPeriods: Record<string, number>;
   /** Most common reference-number formats, e.g. "AA-A-99999". */
   referenceShapes: [string, number][];
+  /** Estimated listings that publish on Ziba, and why the rest are held back. */
+  forecast?: ImportForecast;
 };
+
+export type ImportForecast = { publishable: number; dropped: { reason: string; count: number }[] };
+
+/** Ziba import minimum: smaller feeds are rejected at onboarding. */
+export const MIN_FEED_LISTINGS = 100;
 
 const COMMERCIAL_TYPES = new Set(["Office", "Retail", "Warehouse", "Shop", "Show Room", "Building", "Whole Building", "Land", "Land/Plot", "Full Floor", "Half Floor", "Farm", "Staff Accommodation"]);
 const KNOWN_TYPES = new Set([
@@ -74,6 +81,18 @@ export function shapeOf(value: string): string {
 
 const isPoa = (l: Listing) => /^(yes|true|1)$/i.test(l.priceOnApplication?.trim() ?? "");
 
+/** Pre-signed storage links (S3, CloudFront, GCS) stop working minutes after the crawl. */
+const EXPIRING_URL = /[?&](x-amz-expires|x-amz-signature|expires|signature|x-goog-expires|se)=/i;
+const hasExpiringImages = (l: Listing) => (l.images ?? []).some((u) => EXPIRING_URL.test(u)) || EXPIRING_URL.test(l.agent?.photo ?? "");
+const hasInlineImages = (l: Listing) => (l.images ?? []).some((u) => u.startsWith("data:")) || (l.agent?.photo ?? "").startsWith("data:");
+/** Ziba maps these codes to a generic "Residential"/building type with no details section. */
+const GENERIC_TYPE_CODES = new Set(["BU", "HO"]);
+const STALE_DAYS = 180;
+const ageDays = (l: Listing) => {
+  const t = Date.parse(l.lastUpdate ?? "");
+  return Number.isFinite(t) ? (Date.now() - t) / 86_400_000 : null;
+};
+
 export function checkFeed(listings: Listing[]): FeedCheckResult {
   const market = MARKET_BY_CURRENCY_NAME[(listings[0]?.currency ?? "").trim().toLowerCase()] ?? null;
   const bounds = market ? MARKET_BOUNDS[market] : null;
@@ -112,6 +131,55 @@ export function checkFeed(listings: Listing[]): FeedCheckResult {
     { code: "short_description", severity: "warning", title: "Description under 200 characters", hint: "Short descriptions lower the portal quality score.", test: (l) => (l.description?.trim().length ?? 0) < 200 },
     { code: "agent_no_contact", severity: "warning", title: "Agent without phone or email", hint: "Leads can't reach the agent.", test: (l) => !l.agent?.phone?.trim() && !l.agent?.email?.trim() },
     { code: "missing_permit", severity: market === "AED" ? "warning" : "info", title: "No permit number", hint: "Dubai listings need a RERA/DLD permit number.", test: (l) => !l.permitNumber?.trim() },
+    {
+      code: "poa_not_published",
+      severity: "warning",
+      title: "Price on application: not published on Ziba",
+      hint: "Ziba discards listings marked price_on_application=Yes; publish a price to include them.",
+      test: isPoa,
+    },
+    {
+      code: "expiring_image_urls",
+      severity: "error",
+      title: "Image links expire (pre-signed URLs)",
+      hint: "Signed storage links stop working shortly after the crawl; import immediately or re-host the images.",
+      test: hasExpiringImages,
+    },
+    {
+      code: "inline_images",
+      severity: "error",
+      title: "Images embedded as base64",
+      hint: "Ziba can't process data: URIs; use a normal image URL.",
+      test: hasInlineImages,
+    },
+    {
+      code: "size_outlier",
+      severity: "warning",
+      title: "Implausible size or bedrooms",
+      hint: "Residential size over 50,000 sqft or more than 15 bedrooms; usually a unit or field mix-up.",
+      test: (l) => !COMMERCIAL_TYPES.has(l.propertyType) && (l.area > 50_000 || (l.beds ?? 0) > 15),
+    },
+    {
+      code: "stale_listing",
+      severity: "info",
+      title: `Not updated in ${STALE_DAYS}+ days`,
+      hint: "Old listings are often already sold or let; confirm the agency still markets them.",
+      test: (l) => (ageDays(l) ?? 0) > STALE_DAYS,
+    },
+    {
+      code: "generic_type_code",
+      severity: "info",
+      title: "Building or hotel type (shown as generic Residential)",
+      hint: "BU and HO map to a generic type on Ziba, so the property details section is hidden.",
+      test: (l) => GENERIC_TYPE_CODES.has((l.propertyTypeCode ?? "").toUpperCase()),
+    },
+    {
+      code: "svg_agent_photo",
+      severity: "info",
+      title: "Agent photo is an SVG",
+      hint: "SVG logos are often white on transparent and render invisible; prefer a JPG or PNG.",
+      test: (l) => /\.svg(\?|$)/i.test(l.agent?.photo ?? ""),
+    },
     { code: "unknown_type_code", severity: "info", title: "Unrecognised property type code", hint: "Map it in Field mapping so it groups correctly.", test: (l) => !!l.propertyType && !KNOWN_TYPES.has(l.propertyType) },
   ];
 
@@ -174,6 +242,58 @@ export function checkFeed(listings: Listing[]): FeedCheckResult {
     }
   }
 
+  if (listings.length > 0 && listings.length < MIN_FEED_LISTINGS) {
+    issues.push({
+      code: "small_feed",
+      severity: "warning",
+      title: `Only ${listings.length} listings (minimum ${MIN_FEED_LISTINGS})`,
+      hint: "Agencies below the minimum are usually rejected at onboarding.",
+      count: listings.length,
+      examples: [],
+    });
+  }
+
+  // Several currencies in one feed usually means the site priced by visitor location.
+  const currencies = new Map<string, number>();
+  for (const l of listings) {
+    const c = (l.currency ?? "").trim().toUpperCase();
+    if (c) currencies.set(c, (currencies.get(c) ?? 0) + 1);
+  }
+  if (currencies.size > 1) {
+    const [main] = [...currencies.entries()].sort((a, b) => b[1] - a[1])[0];
+    const odd = listings.filter((l) => (l.currency ?? "").trim().toUpperCase() !== main && l.currency?.trim());
+    issues.push({
+      code: "mixed_currency",
+      severity: "warning",
+      title: `Prices in ${currencies.size} currencies`,
+      hint: `Most listings use ${main}; the rest may be converted by the website and are not comparable.`,
+      count: odd.length,
+      examples: odd.slice(0, 5).map((l) => l.reference),
+    });
+  }
+
+  // Ziba keeps one agent profile per email, so agents sharing an inbox are merged on import.
+  const namesByEmail = new Map<string, Set<string>>();
+  for (const l of listings) {
+    const e = l.agent?.email?.trim().toLowerCase();
+    const n = l.agent?.name?.trim();
+    if (!e || !n) continue;
+    if (!namesByEmail.has(e)) namesByEmail.set(e, new Set());
+    namesByEmail.get(e)!.add(n.toLowerCase());
+  }
+  const shared = [...namesByEmail.entries()].filter(([, names]) => names.size > 1);
+  if (shared.length) {
+    const people = [...namesByEmail.values()].reduce((n, s) => n + s.size, 0);
+    issues.push({
+      code: "agents_share_email",
+      severity: "info",
+      title: `${people} agents become ${namesByEmail.size} profile${namesByEmail.size === 1 ? "" : "s"} on import`,
+      hint: `${shared.length} email address(es) are used by several agents (e.g. ${shared[0][0]}); Ziba merges them into one profile.`,
+      count: shared.reduce((n, [, s]) => n + s.size, 0),
+      examples: [],
+    });
+  }
+
   // A reference format used by under 1% of listings is usually a typo or a different source mixed in.
   const sortedShapes = [...shapes.entries()].sort((a, b) => b[1] - a[1]);
   const rare = sortedShapes.filter(([, n]) => listings.length >= 100 && n / listings.length < 0.01);
@@ -199,7 +319,30 @@ export function checkFeed(listings: Listing[]): FeedCheckResult {
   const worstWarning = Math.max(0, ...issues.filter((i) => i.severity === "warning").map((i) => i.count / n));
   const gate = worstError > 0.05 ? "fail" : worstError > 0 || worstWarning > 0.25 ? "warn" : "pass";
 
-  return { gate, listingCount: listings.length, issues, rentPeriods, referenceShapes: sortedShapes.slice(0, 5) };
+  return { gate, listingCount: listings.length, issues, rentPeriods, referenceShapes: sortedShapes.slice(0, 5), forecast: importForecast(listings) };
+}
+
+/** Reasons Ziba holds a listing back, first match wins (mirrors the import policy seen in QA). */
+const DROP_REASONS: [string, (l: Listing) => boolean][] = [
+  ["Price on application", isPoa],
+  ["No photos", (l) => !(l.images?.length > 0)],
+  ["Expiring or inline image links", (l) => hasExpiringImages(l) || hasInlineImages(l)],
+  [
+    "Missing required fields",
+    (l) => !l.reference?.trim() || l.purpose === "unknown" || !l.propertyType?.trim() || !l.city?.trim() || !l.community?.trim() || !(l.price > 0),
+  ],
+];
+
+/** Estimate of how many listings will publish on Ziba. Broken image URLs can only be seen after import. */
+export function importForecast(listings: Listing[]): ImportForecast {
+  const counts = new Map<string, number>();
+  let publishable = 0;
+  for (const l of listings) {
+    const hit = DROP_REASONS.find(([, test]) => test(l));
+    if (hit) counts.set(hit[0], (counts.get(hit[0]) ?? 0) + 1);
+    else publishable++;
+  }
+  return { publishable, dropped: DROP_REASONS.map(([reason]) => ({ reason, count: counts.get(reason) ?? 0 })).filter((d) => d.count > 0) };
 }
 
 export type FieldCompleteness = { field: string; before: number; after: number; delta: number; flagged: boolean };
