@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,10 +28,19 @@ export function SourcePicker({ className }: { className?: string }) {
   );
 }
 
-/** Empty state for a page that needs one source: prompts for a source, or links to Sources when there are none. */
+/**
+ * Shown by pages that work on one source. With sources available it opens the largest one right
+ * away (same as picking it in the source menu) instead of leaving the page blank.
+ */
 export function NoSourceState({ what }: { what: string }) {
-  const { sources, isLoading } = useAppData();
-  if (isLoading) return <p className="py-10 text-center text-sm text-muted-foreground">Loading…</p>;
+  const { sources, isLoading, scope, setScope } = useAppData();
+  const largest = [...sources].sort((a, b) => (liveVersionOf(b)?.listingCount ?? 0) - (liveVersionOf(a)?.listingCount ?? 0))[0];
+  useEffect(() => {
+    if (!isLoading && scope.mode === "all" && largest) setScope({ mode: "agency", agencyName: largest.name });
+  }, [isLoading, scope.mode, largest, setScope]);
+  if (isLoading || (scope.mode === "all" && largest)) {
+    return <p className="py-10 text-center text-sm text-muted-foreground">Opening {largest?.name ?? "source"}…</p>;
+  }
   if (sources.length === 0) {
     return (
       <div className="py-16 text-center">

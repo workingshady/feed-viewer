@@ -24,7 +24,6 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { WorkflowCompareLinks } from "@/components/WorkflowCompareLinks";
 import {
   analyzeCrossAgencyDuplicates,
   dedupeTaggedListings,
@@ -78,7 +77,7 @@ import {
   Sparkles,
   Tag,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
 
@@ -802,6 +801,19 @@ export default function CrossAgencyDupesPage() {
     [report, fuzzyFiltered, fuzzyClusters],
   );
 
+  // Open on the strongest signal that actually found something, rather than an empty list —
+  // until the user picks a signal themselves.
+  const userPickedSignal = useRef(false);
+  const pickSignal = (id: SignalId) => {
+    userPickedSignal.current = true;
+    setActiveSignal(id);
+  };
+  useEffect(() => {
+    if (!report || userPickedSignal.current || countFor(activeSignal) > 0) return;
+    const first = SIGNAL_GROUPS.flatMap((g) => g.signals).find((sig) => countFor(sig.id) > 0);
+    if (first) setActiveSignal(first.id);
+  }, [report, activeSignal, countFor]);
+
   const activeClusters = report ? clustersForSignal(activeSignal, report, fuzzyFiltered) : [];
 
   const structuralClusters = useMemo(() => {
@@ -899,9 +911,6 @@ export default function CrossAgencyDupesPage() {
             </WorkflowTooltip>
           </div>
         </div>
-        <div className="mb-6 pb-4 border-b border-border/60">
-          <WorkflowCompareLinks current="cross-agency" heading="Workflows" className="text-[11px] text-muted-foreground" />
-        </div>
 
         {loading ? (
           <p
@@ -939,7 +948,7 @@ export default function CrossAgencyDupesPage() {
                         type="button"
                         role="tab"
                         aria-selected={active}
-                        onClick={() => setActiveSignal(s.id)}
+                        onClick={() => pickSignal(s.id)}
                         className={cn(
                           "snap-start shrink-0 rounded-full px-2.5 py-1.5 text-[11px] font-medium tabular-nums transition-colors border",
                           active
@@ -995,7 +1004,7 @@ export default function CrossAgencyDupesPage() {
                             <SignalTooltip key={s.id} signalId={s.id} side="right">
                               <button
                                 type="button"
-                                onClick={() => setActiveSignal(s.id)}
+                                onClick={() => pickSignal(s.id)}
                                 aria-current={active ? "true" : undefined}
                                 className={cn(
                                   "flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2.5 min-h-11 text-left text-sm transition-colors",

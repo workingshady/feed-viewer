@@ -1,3 +1,6 @@
+import { FeedChecksCard } from "@/components/sources/FeedChecks";
+import { checkFeed } from "@/lib/feedValidation";
+import { timeAgo } from "@/components/sources/format";
 import AppHeader from "@/components/AppHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,13 +99,13 @@ function StatHint({ children }: { children: React.ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex rounded-full p-1 text-muted-foreground hover:text-primary-text hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-colors"
-          aria-label="Explain this metric"
+        {/* Not a button: these hints sit inside clickable stat cards, and buttons can't nest. */}
+        <span
+          className="inline-flex rounded-full p-1 text-muted-foreground hover:text-primary-text hover:bg-primary/10 transition-colors"
+          aria-hidden
         >
           <HelpCircle className="w-4 h-4 shrink-0" strokeWidth={2} />
-        </button>
+        </span>
       </TooltipTrigger>
       <TooltipContent
         side="top"
@@ -141,6 +144,7 @@ const ValidationPage = () => {
   const listingsQ = useVersionListings(version);
   const prevQ = useVersionListings(prevVersion);
   const versionListings = listingsQ.data;
+  const feedChecks = useMemo(() => (versionListings ? checkFeed(versionListings) : null), [versionListings]);
   const dataReady = !!versionListings && (!prevVersion || !!prevQ.data);
 
   const diff = useMemo(
@@ -429,11 +433,11 @@ const ValidationPage = () => {
               <div className="min-w-0 flex-1">
                 <p className="dashboard-eyebrow mb-2">Quality</p>
                 <h1 className="text-2xl sm:text-3xl font-extrabold font-heading text-foreground tracking-tight [text-shadow:0_1px_28px_hsl(var(--primary)/0.14)]">
-                  Import validation
+                  Validation
                 </h1>
                 <p className="text-sm text-muted-foreground mt-2 max-w-2xl leading-relaxed">
-                  Read each section as a quality report for the XML you imported: parser messages, structural checks, and
-                  row-level diff versus the last run for the same agency.
+                  Quality report for one version of a source: feed checks, parser messages, structural conflicts and the
+                  listing-by-listing diff against the previous version.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 shrink-0">
@@ -468,7 +472,9 @@ const ValidationPage = () => {
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span className="font-medium text-foreground">{fileName}</span>
                   <span aria-hidden>·</span>
-                  <time dateTime={createdAt}>{new Date(createdAt).toLocaleString()}</time>
+                  <time dateTime={createdAt} title={new Date(createdAt).toLocaleString()}>
+                    {timeAgo(createdAt)}
+                  </time>
                   <span aria-hidden>·</span>
                   <span>{listingCount} listings in file</span>
                   {importSession.agencyInfo?.name && (
@@ -513,12 +519,22 @@ const ValidationPage = () => {
                 <>
                   <CheckCircle2 className="w-5 h-5 shrink-0 text-success" />
                   <span>
-                    <strong>Clean run:</strong> no parser errors and no recorded structural conflicts for this session.
+                    <strong>Parsed cleanly:</strong> no parser errors or structural conflicts. Content problems, if any, are in
+                    the feed checks below.
                   </span>
                 </>
               )}
             </div>
           </div>
+
+          {feedChecks && (
+            <FeedChecksCard
+              result={feedChecks}
+              title={`Feed checks · v${version.number}`}
+              fileName={`${source.name}-v${version.number}-feed-checks.csv`}
+              exampleHref={(ref) => `/listing/${encodeURIComponent(`${source.id}:${ref}`)}`}
+            />
+          )}
 
           <Tabs value={mainTab} onValueChange={(v) => setMainTab(v as typeof mainTab)} className="space-y-6">
             <TabsList className="dashboard-tabs-list flex h-auto min-h-10 w-full flex-wrap justify-start gap-1 sm:inline-flex sm:w-auto">
