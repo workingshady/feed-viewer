@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MarketCard } from "./MarketCard";
+import { VersionsTab } from "./VersionsTab";
+import { ChangesTab } from "./ChangesTab";
+import { IssuesTab } from "./IssuesTab";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ExternalLink, RefreshCw, Settings2, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +20,6 @@ import { RECHARTS_TOOLTIP_CONTENT, RECHARTS_TOOLTIP_ITEM, RECHARTS_TOOLTIP_LABEL
 import { useReparseLiveVersion, useUpdateSource } from "@/hooks/useSources";
 import { useAppData } from "@/providers/useAppData";
 import { HealthDot, ScoreBadge, healthOf, healthReasons } from "./health";
-import { VersionRow } from "./VersionRow";
 import { ApplyVersionDialog, DeleteSourceDialog, DeleteVersionDialog } from "./VersionDialogs";
 import { pct } from "./format";
 import { AgencyLogo } from "@/components/AgencyLogo";
@@ -155,6 +159,9 @@ function TrendCard({ source }: { source: SourceDTO }) {
 
 type Target = { source: SourceDTO; version: VersionDTO } | null;
 
+const SOURCE_TABS = ["overview", "versions", "changes", "issues"] as const;
+type SourceTab = (typeof SOURCE_TABS)[number];
+
 export function SourceDetail({
   source,
   canEdit,
@@ -171,6 +178,19 @@ export function SourceDetail({
   const health = healthOf(source);
   const reasons = healthReasons(source);
   const reparse = useReparseLiveVersion();
+  const [params, setParams] = useSearchParams();
+  const tabParam = params.get("tab") as SourceTab | null;
+  const tab: SourceTab = tabParam && SOURCE_TABS.includes(tabParam) ? tabParam : "overview";
+  const setTab = (next: SourceTab) =>
+    setParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        if (next === "overview") n.delete("tab");
+        else n.set("tab", next);
+        return n;
+      },
+      { replace: true },
+    );
   const [applyTarget, setApplyTarget] = useState<Target>(null);
   const [deleteTarget, setDeleteTarget] = useState<Target>(null);
   const [deleteSource, setDeleteSource] = useState<SourceDTO | null>(null);
@@ -233,32 +253,46 @@ export function SourceDetail({
         </ul>
       )}
 
-      {live && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <QualityCard live={live} />
-          <InventoryCard live={live} />
-        </div>
-      )}
-      <TrendCard source={source} />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as SourceTab)}>
+        <TabsList className="h-auto flex-wrap justify-start">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="versions">Versions {source.versions.length}</TabsTrigger>
+          <TabsTrigger value="changes">Changes</TabsTrigger>
+          <TabsTrigger value="issues">Issues</TabsTrigger>
+        </TabsList>
 
-      <section aria-labelledby="versions-heading" className="space-y-2">
-        <h3 id="versions-heading" className="text-sm font-semibold text-foreground">
-          Versions
-        </h3>
-        <ol className="space-y-2">
-          {source.versions.map((v) => (
-            <VersionRow
-              key={v.id + (v.note ?? "")}
-              source={source}
-              version={v}
-              isLive={v.id === source.activeVersionId}
-              canEdit={canEdit}
-              onApply={() => setApplyTarget({ source, version: v })}
-              onDelete={() => setDeleteTarget({ source, version: v })}
-            />
-          ))}
-        </ol>
-      </section>
+        <TabsContent value="overview" className="space-y-4">
+          {live ? (
+            <>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <QualityCard live={live} />
+                <InventoryCard live={live} />
+              </div>
+              <MarketCard live={live} />
+            </>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">Apply a version to see its insights.</p>
+          )}
+          <TrendCard source={source} />
+        </TabsContent>
+
+        <TabsContent value="versions">
+          <VersionsTab
+            source={source}
+            canEdit={canEdit}
+            onApply={(v) => setApplyTarget({ source, version: v })}
+            onDelete={(v) => setDeleteTarget({ source, version: v })}
+          />
+        </TabsContent>
+
+        <TabsContent value="changes">
+          <ChangesTab source={source} />
+        </TabsContent>
+
+        <TabsContent value="issues">
+          <IssuesTab source={source} />
+        </TabsContent>
+      </Tabs>
 
       <ApplyVersionDialog target={applyTarget} onClose={() => setApplyTarget(null)} />
       <DeleteVersionDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />

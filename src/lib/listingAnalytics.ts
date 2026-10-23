@@ -226,14 +226,20 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
     if (mn === mx) {
       priceHistogram = [{ label: formatMoneyTick(mn), count: sortedPrices.length, min: mn, max: mx }];
     } else {
-      const step = (mx - mn) / binCount;
+      // Property prices span several orders of magnitude (monthly rents to villas), so equal-width
+      // bins put almost everything in the first bar. Log-spaced bins show the real shape.
+      const logScale = mn > 0;
+      const edge = (i: number) =>
+        logScale ? mn * Math.pow(mx / mn, i / binCount) : mn + ((mx - mn) * i) / binCount;
       priceHistogram = Array.from({ length: binCount }, (_, i) => {
-        const bmin = mn + step * i;
-        const bmax = i === binCount - 1 ? mx : mn + step * (i + 1);
+        const bmin = edge(i);
+        const bmax = i === binCount - 1 ? mx : edge(i + 1);
         return { label: `${formatMoneyTick(bmin)}–${formatMoneyTick(bmax)}`, count: 0, min: bmin, max: bmax };
       });
       for (const p of sortedPrices) {
-        let i = Math.floor((p - mn) / step);
+        let i = logScale
+          ? Math.floor((Math.log(p / mn) / Math.log(mx / mn)) * binCount)
+          : Math.floor(((p - mn) / (mx - mn)) * binCount);
         if (i >= binCount) i = binCount - 1;
         if (i < 0) i = 0;
         priceHistogram[i].count++;

@@ -29,9 +29,24 @@ export function DiffBadges({ added, removed, changed }: { added: number; removed
   );
 }
 
+/** Signed change vs the previous version; hidden when there is nothing to compare. */
+function Delta({ value, label = "listings vs previous version" }: { value: number | null; label?: string }) {
+  if (value == null || value === 0) return null;
+  return (
+    <span
+      title={`${value > 0 ? "+" : ""}${value} ${label}`}
+      className={cn("ml-1 font-mono text-[11px] tabular-nums", value > 0 ? "text-success" : "text-destructive-text")}
+    >
+      ({value > 0 ? "+" : ""}
+      {value.toLocaleString()})
+    </span>
+  );
+}
+
 export function VersionRow({
   source,
   version,
+  previous = null,
   isLive,
   canEdit,
   onApply,
@@ -39,6 +54,8 @@ export function VersionRow({
 }: {
   source: SourceDTO;
   version: VersionDTO;
+  /** The version uploaded before this one, for change deltas. */
+  previous?: VersionDTO | null;
   isLive: boolean;
   canEdit: boolean;
   onApply: () => void;
@@ -78,11 +95,16 @@ export function VersionRow({
           <div>
             {timeAgo(version.createdAt)}
             {version.createdBy ? ` by ${version.createdBy.username}` : ""} · {version.listingCount.toLocaleString()} listings
+            <Delta value={previous ? version.listingCount - previous.listingCount : null} />
           </div>
         </div>
         <DiffBadges added={version.added} removed={version.removed} changed={version.changed} />
         <div className="flex items-center gap-1" title="Quality score">
           <ScoreBadge score={version.stats?.score} />
+          <Delta
+            value={previous?.stats && version.stats ? version.stats.score - previous.stats.score : null}
+            label="quality vs previous version"
+          />
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -4,7 +4,7 @@ import { Database, FileStack, Gauge, HardDrive, Loader2, Upload } from "lucide-r
 import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { SourceList } from "@/components/sources/SourceList";
+import { SourceList, type HealthFilter } from "@/components/sources/SourceList";
 import { SourceDetail } from "@/components/sources/SourceDetail";
 import { UploadDialog } from "@/components/sources/UploadDialog";
 import { healthOf } from "@/components/sources/health";
@@ -14,9 +14,23 @@ import { useAuth } from "@/providers/AuthProvider";
 import { hasRole } from "@/lib/roles";
 import { liveVersionOf } from "@/lib/sourcesApi";
 
-function Kpi({ icon: Icon, label, value, hint }: { icon: typeof Database; label: string; value: string; hint?: string }) {
-  return (
-    <Card>
+function Kpi({
+  icon: Icon,
+  label,
+  value,
+  hint,
+  onClick,
+  active,
+}: {
+  icon: typeof Database;
+  label: string;
+  value: string;
+  hint?: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const body = (
+    <Card className={active ? "border-primary" : undefined}>
       <CardContent className="flex items-center gap-3 p-4">
         <Icon className="h-5 w-5 shrink-0 text-primary-text" aria-hidden />
         <div className="min-w-0">
@@ -27,6 +41,17 @@ function Kpi({ icon: Icon, label, value, hint }: { icon: typeof Database; label:
       </CardContent>
     </Card>
   );
+  if (!onClick) return body;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="rounded-lg text-left transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {body}
+    </button>
+  );
 }
 
 export default function SourcesPage() {
@@ -35,6 +60,7 @@ export default function SourcesPage() {
   const canEdit = hasRole(user?.role, "editor");
   const [params, setParams] = useSearchParams();
   const [upload, setUpload] = useState<{ open: boolean; fixed: boolean }>({ open: false, fixed: false });
+  const [healthFilter, setHealthFilter] = useState<HealthFilter>("all");
 
   const selectedId = params.get("source") ?? sources[0]?.id ?? null;
   const selected = sources.find((s) => s.id === selectedId) ?? null;
@@ -46,7 +72,7 @@ export default function SourcesPage() {
     return {
       liveListings: lives.reduce((n, v) => n + v.listingCount, 0),
       avgScore: scored.length ? Math.round(scored.reduce((n, v) => n + (v.stats?.score ?? 0), 0) / scored.length) : null,
-      attention: sources.filter((s) => healthOf(s) !== "healthy").length,
+      attention: sources.filter((s) => healthOf(s) === "attention").length,
       storage: sources.reduce((n, s) => n + s.versions.reduce((m, v) => m + v.fileBytes, 0), 0),
       versions: sources.reduce((n, s) => n + s.versions.length, 0),
     };
@@ -98,13 +124,26 @@ export default function SourcesPage() {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <Kpi icon={Database} label="Live listings" value={kpis.liveListings.toLocaleString()} hint={`${sources.length} sources`} />
               <Kpi icon={Gauge} label="Average quality" value={kpis.avgScore != null ? `${kpis.avgScore}/100` : "—"} />
-              <Kpi icon={FileStack} label="Need attention" value={String(kpis.attention)} hint="Pending, low quality or not live" />
+              <Kpi
+                icon={FileStack}
+                label="Need attention"
+                value={String(kpis.attention)}
+                hint={kpis.attention ? "Click to show them" : "All sources healthy"}
+                onClick={kpis.attention ? () => setHealthFilter(healthFilter === "attention" ? "all" : "attention") : undefined}
+                active={healthFilter === "attention"}
+              />
               <Kpi icon={HardDrive} label="Uploaded files" value={formatBytes(kpis.storage)} hint={`${kpis.versions} versions (original size)`} />
             </div>
 
             <div className="grid gap-6 md:grid-cols-[minmax(260px,340px)_1fr]">
               <aside className="min-w-0">
-                <SourceList sources={sources} selectedId={selected?.id ?? null} onSelect={select} />
+                <SourceList
+                  sources={sources}
+                  selectedId={selected?.id ?? null}
+                  onSelect={select}
+                  filter={healthFilter}
+                  onFilterChange={setHealthFilter}
+                />
               </aside>
               <section aria-label="Source details" className="min-w-0">
                 {selected ? (

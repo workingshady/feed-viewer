@@ -1,0 +1,184 @@
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowDownRight, ArrowUpRight, GitCompare, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { olderVersion } from "@/components/SourcePicker";
+import { useVersionListings } from "@/hooks/useSources";
+import { formatPriceCompact } from "@/lib/displayPrice";
+import { liveVersionOf, type SourceDTO } from "@/lib/sourcesApi";
+import { changedFieldCounts, priceMoves, type PriceMove } from "@/lib/sourceInsights";
+import { diffListings } from "@/lib/versionDiff";
+import { UI_FIELDS, type Listing } from "@/lib/types";
+import { BarList, listingHref } from "./BarList";
+import { DiffBadges } from "./VersionRow";
+
+const FIELD_LABEL = Object.fromEntries(UI_FIELDS.map((f) => [f.key, f.label])) as Record<string, string>;
+const PAGE = 25;
+
+function ListingLinks({ sourceId, listings, linked = true }: { sourceId: string; listings: Listing[]; linked?: boolean }) {
+  const [shown, setShown] = useState(PAGE);
+  if (!listings.length) return <p className="py-4 text-sm text-muted-foreground">None.</p>;
+  return (
+    <div className="space-y-2">
+      <ul className="divide-y divide-border rounded-lg border">
+        {listings.slice(0, shown).map((l) => (
+          <li key={l.reference || l.id}>
+            {(() => {
+              const row = (
+                <>
+                  <span className="hidden w-28 shrink-0 truncate font-mono text-xs text-muted-foreground sm:inline">{l.reference}</span>
+                  <span className="min-w-0 flex-1 truncate">{l.title || "Untitled"}</span>
+                  <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{l.community}</span>
+                  <span className="shrink-0 font-mono text-xs tabular-nums">{l.price > 0 ? formatPriceCompact(l.price) : "—"}</span>
+                </>
+              );
+              const cls = "flex items-center gap-3 px-3 py-2 text-sm";
+              return linked ? (
+                <Link to={listingHref(sourceId, l)} className={`${cls} hover:bg-muted/50`}>
+                  {row}
+                </Link>
+              ) : (
+                <div className={cls}>{row}</div>
+              );
+            })()}
+          </li>
+        ))}
+      </ul>
+      {listings.length > shown && (
+        <Button variant="outline" size="sm" onClick={() => setShown((n) => n + PAGE)}>
+          Show more ({listings.length - shown} left)
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function PriceMoveList({ sourceId, moves }: { sourceId: string; moves: PriceMove[] }) {
+  if (!moves.length) return <p className="text-xs text-muted-foreground">None.</p>;
+  return (
+    <ul className="space-y-1">
+      {moves.slice(0, 8).map((m) => (
+        <li key={m.listing.reference}>
+          <Link to={listingHref(sourceId, m.listing)} className="flex items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-muted/50">
+            <span className="min-w-0 flex-1 truncate">{m.listing.title || m.listing.reference}</span>
+            <span className="hidden shrink-0 font-mono tabular-nums text-muted-foreground sm:inline">
+              {formatPriceCompact(m.before)} → {formatPriceCompact(m.after)}
+            </span>
+            <span className={`w-14 shrink-0 text-right font-mono tabular-nums ${m.pct > 0 ? "text-destructive-text" : "text-success"}`}>
+              {m.pct > 0 ? "+" : ""}
+              {(m.pct * 100).toFixed(1)}%
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** What the live version changed compared with the version uploaded before it. */
+export function ChangesTab({ source }: { source: SourceDTO }) {
+  const live = liveVersionOf(source);
+  const prev = olderVersion(source, live);
+  const after = useVersionListings(live);
+  const before = useVersionListings(prev);
+
+  const data = useMemo(() => {
+    if (!after.data || (prev && !before.data)) return null;
+    const diff = diffListings(before.data ?? [], after.data);
+    return { diff, moves: priceMoves(diff), fields: changedFieldCounts(diff) };
+  }, [after.data, before.data, prev]);
+
+  if (!live) return <p className="py-8 text-center text-sm text-muted-foreground">No live version yet.</p>;
+  if (!prev) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        v{live.number} is the first version — upload another one to see what changed.
+      </p>
+    );
+  }
+  if (!data) {
+    return (
+      <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> Comparing v{prev.number} with v{live.number}…
+      </p>
+    );
+  }
+
+  const { diff, moves, fields } = data;
+  return (
+    <div className="min-w-0 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          Live <span className="font-mono font-semibold">v{live.number}</span> vs
+          <span className="font-mono font-semibold">v{prev.number}</span>
+          <DiffBadges added={diff.added.length} removed={diff.removed.length} changed={diff.changed.length} />
+          <span className="text-xs text-muted-foreground">{diff.unchangedCount.toLocaleString()} unchanged</span>
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link to={`/feed-compare?source=${source.id}&a=${prev.id}&b=${live.id}`}>
+            <GitCompare className="mr-1.5 h-4 w-4" /> Field-by-field compare
+          </Link>
+        </Button>
+      </div>
+
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-1.5 text-sm">
+              <ArrowUpRight className="h-4 w-4 text-destructive-text" aria-hidden /> Price rises ({moves.up.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PriceMoveList sourceId={source.id} moves={moves.up} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-1.5 text-sm">
+              <ArrowDownRight className="h-4 w-4 text-success" aria-hidden /> Price drops ({moves.down.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PriceMoveList sourceId={source.id} moves={moves.down} />
+          </CardContent>
+        </Card>
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Most-changed fields</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <BarList
+              buckets={fields.slice(0, 8).map((f) => ({ ...f, label: FIELD_LABEL[f.label] ?? f.label }))}
+              emptyText="No field changes"
+            />
+            {moves.medianPct != null && (
+              <p className="text-xs text-muted-foreground">
+                Median price change: {(moves.medianPct * 100).toFixed(1)}% across {moves.up.length + moves.down.length} listings
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue={diff.added.length ? "added" : diff.changed.length ? "changed" : "removed"}>
+        <TabsList>
+          <TabsTrigger value="added">Added {diff.added.length}</TabsTrigger>
+          <TabsTrigger value="removed">Removed {diff.removed.length}</TabsTrigger>
+          <TabsTrigger value="changed">Changed {diff.changed.length}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="added">
+          <ListingLinks sourceId={source.id} listings={diff.added} />
+        </TabsContent>
+        <TabsContent value="removed">
+          <p className="mb-2 text-xs text-muted-foreground">These were in v{prev.number} but are not in the live version.</p>
+          <ListingLinks sourceId={source.id} listings={diff.removed} linked={false} />
+        </TabsContent>
+        <TabsContent value="changed">
+          <ListingLinks sourceId={source.id} listings={diff.changed.map((c) => c.after)} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}

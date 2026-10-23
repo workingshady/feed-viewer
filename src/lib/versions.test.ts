@@ -76,3 +76,16 @@ describe("commitVersion", () => {
     expect(deps.discardUploadedBlobs).toHaveBeenCalledWith(paths.map((p) => `https://blob/${p}`));
   });
 });
+
+describe("source insights", () => {
+  it("bands prices by purpose and finds price moves", async () => {
+    const { priceBands, priceMoves, bedroomMix } = await import("@/lib/sourceInsights");
+    const sale = [listing("a", { price: 400_000 }), listing("b", { price: 2_500_000 }), listing("c", { price: 12_000_000 })];
+    const bands = priceBands([...sale, listing("r", { purpose: "rent", price: 90_000 })], "sale");
+    expect(bands.map((b) => b.count)).toEqual([1, 0, 0, 1, 0, 0, 1]);
+    expect(bedroomMix([listing("s", { beds: 0 }), listing("t", { beds: 7 })]).map((b) => b.count)).toEqual([1, 0, 0, 0, 0, 1]);
+    const moves = priceMoves(diffListings(sale, [listing("a", { price: 440_000 }), listing("b", { price: 2_000_000 }), sale[2]]));
+    expect(moves.up.map((m) => m.listing.reference)).toEqual(["a"]);
+    expect(moves.down[0].pct).toBeCloseTo(-0.2);
+  });
+});

@@ -9,13 +9,28 @@ import type { SourceHealth } from "@/lib/versionStats";
 import { HealthDot, ScoreBadge, healthOf } from "./health";
 import { timeAgo } from "./format";
 
-type Filter = "all" | SourceHealth;
+export type HealthFilter = "all" | SourceHealth;
+type Sort = "name" | "listings" | "quality" | "updated";
+
+const SORTS: Record<Sort, string> = {
+  updated: "Newest",
+  name: "A–Z",
+  listings: "Largest",
+  quality: "Lowest quality",
+};
+
+const FILTER_LABELS: Record<HealthFilter, string> = {
+  all: "All",
+  healthy: "Healthy",
+  attention: "Needs attention",
+  error: "Not live",
+};
 
 function Sparkline({ source }: { source: SourceDTO }) {
   const data = [...source.versions].reverse().map((v) => ({ n: v.listingCount }));
-  if (data.length < 2) return <div className="h-5 w-16" />;
+  if (data.length < 2) return <div className="h-5 w-14 shrink-0" />;
   return (
-    <div className="h-5 w-16" aria-hidden>
+    <div className="h-5 w-14 shrink-0" aria-hidden>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
           <Line type="monotone" dataKey="n" stroke="hsl(var(--chart-line))" strokeWidth={1.5} dot={false} isAnimationActive={false} />
@@ -29,20 +44,53 @@ export function SourceList({
   sources,
   selectedId,
   onSelect,
+  filter,
+  onFilterChange,
 }: {
   sources: SourceDTO[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  filter: HealthFilter;
+  onFilterChange: (f: HealthFilter) => void;
 }) {
   const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [sort, setSort] = useState<Sort>("updated");
+
+  const all = useMemo(
+    () =>
+      sources.map((s) => {
+        const live = liveVersionOf(s);
+        const prev = live ? s.versions.find((v) => v.number < live.number) : undefined;
+        return {
+          s,
+          live,
+          health: healthOf(s),
+          delta: live && prev ? live.listingCount - prev.listingCount : null,
+          updated: s.versions[0]?.createdAt ?? s.createdAt,
+        };
+      }),
+    [sources],
+  );
+
+  const counts = useMemo(() => {
+    const c: Record<HealthFilter, number> = { all: all.length, healthy: 0, attention: 0, error: 0 };
+    for (const r of all) c[r.health]++;
+    return c;
+  }, [all]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return sources
-      .map((s) => ({ s, health: healthOf(s), live: liveVersionOf(s) }))
-      .filter((r) => (filter === "all" || r.health === filter) && (!q || `${r.s.name} ${r.s.agencyName}`.toLowerCase().includes(q)));
-  }, [sources, query, filter]);
+    const filtered = all.filter(
+      (r) => (filter === "all" || r.health === filter) && (!q || `${r.s.name} ${r.s.agencyName}`.toLowerCase().includes(q)),
+    );
+    const by: Record<Sort, (a: (typeof all)[number], b: (typeof all)[number]) => number> = {
+      name: (a, b) => a.s.name.localeCompare(b.s.name),
+      listings: (a, b) => (b.live?.listingCount ?? -1) - (a.live?.listingCount ?? -1),
+      quality: (a, b) => (a.live?.stats?.score ?? 101) - (b.live?.stats?.score ?? 101),
+      updated: (a, b) => b.updated.localeCompare(a.updated),
+    };
+    return filtered.sort(by[sort]);
+  }, [all, query, filter, sort]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -51,21 +99,42 @@ export function SourceList({
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search sources" className="pl-8" aria-label="Search sources" />
         </div>
-        <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-          <SelectTrigger className="w-32 shrink-0 sm:w-36" aria-label="Filter by health">
+        <Select value={sort} onValueChange={(v) => setSort(v as Sort)}>
+          <SelectTrigger className="w-[8.5rem] shrink-0" aria-label="Sort sources">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="healthy">Healthy</SelectItem>
-            <SelectItem value="attention">Needs attention</SelectItem>
-            <SelectItem value="error">No live version</SelectItem>
+            {(Object.keys(SORTS) as Sort[]).map((k) => (
+              <SelectItem key={k} value={k}>
+                {SORTS[k]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
 
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by health">
+        {(Object.keys(FILTER_LABELS) as HealthFilter[])
+          .filter((f) => f === "all" || counts[f] > 0)
+          .map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filter === f}
+              onClick={() => onFilterChange(f)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                filter === f ? "border-primary bg-primary text-primary-foreground" : "border-border hover:bg-muted",
+              )}
+            >
+              {f !== "all" && <HealthDot health={f} />}
+              {FILTER_LABELS[f]} <span className="font-mono tabular-nums opacity-80">{counts[f]}</span>
+            </button>
+          ))}
+      </div>
+
       <ul className="flex flex-col gap-1.5" aria-label="Sources">
-        {rows.map(({ s, health, live }) => (
+        {rows.map(({ s, health, live, delta }) => (
           <li key={s.id}>
             <button
               type="button"
@@ -80,8 +149,21 @@ export function SourceList({
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold text-foreground">{s.name}</div>
                 <div className="truncate text-xs text-muted-foreground">
-                  {live ? `v${live.number} · ${live.listingCount.toLocaleString()} listings · ${timeAgo(live.createdAt)}` : "No live version"}
-                  {` · ${s.versions.length} version${s.versions.length === 1 ? "" : "s"}`}
+                  {live ? (
+                    <>
+                      v{live.number} · {live.listingCount.toLocaleString()}
+                      {delta ? (
+                        <span className={delta > 0 ? "text-success" : "text-destructive-text"}>
+                          {" "}
+                          ({delta > 0 ? "+" : ""}
+                          {delta.toLocaleString()})
+                        </span>
+                      ) : null}{" "}
+                      listings · {timeAgo(live.createdAt)}
+                    </>
+                  ) : (
+                    "No live version"
+                  )}
                 </div>
               </div>
               <Sparkline source={s} />

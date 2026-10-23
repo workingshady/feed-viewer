@@ -294,9 +294,9 @@ export default function ListingAnalyticsDashboard({
 
               <ChartShell
                 title="Price distribution"
-                description="Histogram of asking prices — spot concentration at certain price bands and long tails."
+                description="Asking prices on a log scale, so rents and multi-million sales both show their shape."
                 icon={BarChart3}
-                footnote="The curve shows how many priced listings fall into each price band. Tall bands are where inventory stacks; flat tails mean few listings at the extremes. Gaps often reflect how the source prices units."
+                footnote="Each band is a constant multiple of the one before it. Two humps usually mean rentals and sales mixed together — switch Sources scope or use the Market card on Sources to split them."
               >
                 {a.priceHistogram.length === 0 ? (
                   <EmptyChart message="No numeric prices in this set." />
