@@ -13,6 +13,7 @@ import { useLiveVersionStatus } from "@/hooks/useLiveVersionStatus";
 import { COMPARE_UPDATED_EVENT, getCompareListingIds } from "@/lib/compareSelection";
 import ListingAnalyticsDashboard from "@/components/analytics/ListingAnalyticsDashboard";
 import { AgencyLogo } from "@/components/AgencyLogo";
+import { AgentCard, summarizeAgents, usePaged } from "@/components/AgentCard";
 
 type AgentRow = {
   name: string;
@@ -60,21 +61,12 @@ const AgencyDetailPage = () => {
   }, [listings, q]);
 
   const agents = useMemo(() => {
-    const map = new Map<string, AgentRow>();
-    for (const l of listings) {
-      const n = (l.agent?.name || "").trim();
-      if (!n) continue;
-      const cur = map.get(n) ?? { name: n, count: 0, phone: l.agent?.phone, email: l.agent?.email, photo: l.agent?.photo };
-      cur.count++;
-      if (!cur.phone && l.agent?.phone) cur.phone = l.agent.phone;
-      if (!cur.email && l.agent?.email) cur.email = l.agent.email;
-      if (!cur.photo && l.agent?.photo) cur.photo = l.agent.photo;
-      map.set(n, cur);
-    }
-    const arr = Array.from(map.values()).sort((a, b) => b.count - a.count);
+    const arr = summarizeAgents(listings, [agencyName, source?.agencyName ?? ""]).sort((a, b) => b.count - a.count);
     const query = q.trim().toLowerCase();
     return !query ? arr : arr.filter((a) => a.name.toLowerCase().includes(query));
-  }, [listings, q]);
+  }, [listings, q, agencyName, source?.agencyName]);
+  const pagedAgents = usePaged(agents);
+  const pagedListings = usePaged(filteredListings, 24);
 
   const statusById = useLiveVersionStatus(source, listings);
 
@@ -177,55 +169,26 @@ const AgencyDetailPage = () => {
           agents.length === 0 ? (
             <Card className="p-10 text-center text-muted-foreground">No agent people found in this agency feed.</Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {agents.map((a) => (
-                <Link
-                  key={a.name}
-                  to={`/agencies/${encodeURIComponent(agencyName)}/agents/${encodeURIComponent(a.name)}`}
-                  className="block group"
-                >
-                  <Card className="overflow-hidden hover:shadow-lg transition-shadow h-full flex flex-col">
-                    <div className="relative w-full aspect-[3/4] bg-gradient-to-br from-primary/15 to-muted">
-                      {a.photo ? (
-                        <AgentPhoto variant="hero" src={a.photo} alt="" loading="lazy" />
-                      ) : (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <Users className="w-14 h-14 text-muted-foreground/35" />
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-card via-card/30 to-transparent" />
-                      <div className="absolute bottom-3 left-4 right-4 flex items-end justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-lg font-extrabold font-heading text-foreground truncate">{a.name}</div>
-                          <div className="text-xs text-muted-foreground">Property consultant</div>
-                        </div>
-                        <span className="inline-flex px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-xs font-bold shrink-0">
-                          {a.count}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="p-5 flex-1 flex flex-col gap-2 text-sm">
-                      <div className="text-muted-foreground">
-                        <span className="text-foreground font-medium">Phone:</span> {a.phone || "—"}
-                      </div>
-                      <div className="text-muted-foreground truncate">
-                        <span className="text-foreground font-medium">Email:</span> {a.email || "—"}
-                      </div>
-                      <div className="mt-auto pt-2 text-xs font-semibold text-primary-text opacity-0 group-hover:opacity-100 transition-opacity">
-                        View full profile →
-                      </div>
-                    </div>
-                  </Card>
-                </Link>
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {pagedAgents.visible.map((a) => (
+                  <AgentCard
+                    key={`${a.name}:${a.email}`}
+                    agent={a}
+                    href={`/agencies/${encodeURIComponent(agencyName)}/agents/${encodeURIComponent(a.name)}`}
+                  />
+                ))}
+              </div>
+              {pagedAgents.more}
+            </>
           )
         ) : (
           filteredListings.length === 0 ? (
             <Card className="p-10 text-center text-muted-foreground">No listings match.</Card>
           ) : (
+            <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filteredListings.map((l) => (
+              {pagedListings.visible.map((l) => (
                 <PropertyCard
                   key={l.id}
                   listing={l}
@@ -236,6 +199,8 @@ const AgencyDetailPage = () => {
                 />
               ))}
             </div>
+            {pagedListings.more}
+            </>
           )
         )}
       </div>

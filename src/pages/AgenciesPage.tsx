@@ -8,12 +8,17 @@ import { Button } from "@/components/ui/button";
 import { useAppData } from "@/providers/DataProvider";
 import { AGENCIES_DIRECTORY_SUBTITLE } from "@/lib/agencyDirectoryCopy";
 import { AgencyLogo } from "@/components/AgencyLogo";
+import { HealthDot, ScoreBadge, healthOf } from "@/components/sources/health";
+import { timeAgo } from "@/components/sources/format";
+import { liveVersionOf } from "@/lib/sourcesApi";
 
 type AgencyRow = {
   name: string;
   listingsCount: number;
   importsCount: number;
   lastImportedAt: string | null;
+  quality: number | null;
+  health: ReturnType<typeof healthOf>;
   logo?: string;
   website?: string;
   email?: string;
@@ -34,6 +39,8 @@ const AgenciesPage = () => {
         listingsCount: listingsByAgency.get(s.name)?.length ?? 0,
         importsCount: s.versions.length,
         lastImportedAt: s.versions[0]?.createdAt ?? null,
+        quality: liveVersionOf(s)?.stats?.score ?? null,
+        health: healthOf(s),
         logo: info?.logo || undefined,
         website: info?.website || undefined,
         email: info?.email || undefined,
@@ -104,7 +111,7 @@ const AgenciesPage = () => {
                         <div className="text-lg font-extrabold font-heading text-foreground truncate">{a.name}</div>
                         <div className="text-sm text-muted-foreground mt-1 inline-flex items-center gap-1.5">
                           <Calendar className="w-3.5 h-3.5" />
-                          {a.lastImportedAt ? new Date(a.lastImportedAt).toLocaleString() : "—"}
+                          {a.lastImportedAt ? `Updated ${timeAgo(a.lastImportedAt)}` : "—"}
                         </div>
                         {(() => {
                           const websiteLine =
@@ -123,14 +130,22 @@ const AgenciesPage = () => {
                     </div>
                     <ArrowRight className="w-4 h-4 text-muted-foreground" />
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="mt-4 grid grid-cols-3 gap-3">
                     <div className="bg-accent/60 rounded-lg p-3">
-                      <div className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">Imports</div>
+                      <div className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">Versions</div>
                       <div className="text-lg font-bold text-foreground">{a.importsCount}</div>
                     </div>
                     <div className="bg-accent/60 rounded-lg p-3">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">
+                        <HealthDot health={a.health} /> Quality
+                      </div>
+                      <div className="text-lg font-bold">
+                        <ScoreBadge score={a.quality} />
+                      </div>
+                    </div>
+                    <div className="bg-accent/60 rounded-lg p-3">
                       <div className="text-[11px] text-muted-foreground uppercase tracking-wide font-semibold">Listings</div>
-                      <div className="text-lg font-bold text-foreground">{a.listingsCount}</div>
+                      <div className="text-lg font-bold text-foreground">{a.listingsCount.toLocaleString()}</div>
                     </div>
                   </div>
                 </Card>

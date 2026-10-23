@@ -152,6 +152,28 @@ export function checkFeed(listings: Listing[]): FeedCheckResult {
     });
   }
 
+  // One contact on most listings usually means the feed fills in a default agent, so leads and
+  // agent stats are wrong.
+  if (listings.length >= 100) {
+    const byAgent = new Map<string, number>();
+    for (const l of listings) {
+      const k = (l.agent?.email || l.agent?.phone || l.agent?.name || "").trim().toLowerCase();
+      if (k) byAgent.set(k, (byAgent.get(k) ?? 0) + 1);
+    }
+    const [topKey, topCount] = [...byAgent.entries()].sort((x, y) => y[1] - x[1])[0] ?? ["", 0];
+    if (topCount / listings.length > 0.5) {
+      const top = listings.find((l) => (l.agent?.email || l.agent?.phone || l.agent?.name || "").trim().toLowerCase() === topKey);
+      issues.push({
+        code: "agent_concentration",
+        severity: "warning",
+        title: `${Math.round((topCount / listings.length) * 100)}% of listings use one agent (${top?.agent.name || topKey})`,
+        hint: "Often a default contact filled in by the export; check the agency's agent mapping.",
+        count: topCount,
+        examples: listings.filter((l) => l === top).slice(0, 1).map((l) => l.reference),
+      });
+    }
+  }
+
   // A reference format used by under 1% of listings is usually a typo or a different source mixed in.
   const sortedShapes = [...shapes.entries()].sort((a, b) => b[1] - a[1]);
   const rare = sortedShapes.filter(([, n]) => listings.length >= 100 && n / listings.length < 0.01);

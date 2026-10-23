@@ -9,11 +9,12 @@ const cell = (v: unknown): string => {
   const s = v == null ? "" : Array.isArray(v) ? v.join(" | ") : typeof v === "object" ? JSON.stringify(v) : String(v);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
-const rows = (header: string[], data: unknown[][]) => [header, ...data].map((r) => r.map(cell).join(",")).join("\n");
+/** Header + rows → CSV text (values quoted when needed). */
+export const toCsv = (header: string[], data: unknown[][]) => [header, ...data].map((r) => r.map(cell).join(",")).join("\n");
 
 /** One row per check rule with its count, severity, hint and example references. */
 export function feedCheckCsv(result: FeedCheckResult): string {
-  return rows(
+  return toCsv(
     ["severity", "check", "listings", "share", "how_to_fix", "examples"],
     result.issues.map((i) => [
       i.severity,
@@ -42,7 +43,7 @@ export function changesCsv(diff: VersionDiff): string {
       out.push(["changed", c.after.reference, c.after.title, FIELD_LABEL[k] ?? k, c.before[k], c.after[k]]);
     }
   }
-  return rows(["change", "reference", "title", "field", "old_value", "new_value"], out);
+  return toCsv(["change", "reference", "title", "field", "old_value", "new_value"], out);
 }
 
 const LISTING_COLUMNS: (keyof Listing)[] = [
@@ -53,7 +54,7 @@ const LISTING_COLUMNS: (keyof Listing)[] = [
 
 /** Flat export of a version's listings (without raw XML). */
 export function listingsCsv(listings: Listing[]): string {
-  return rows(
+  return toCsv(
     [...LISTING_COLUMNS.map((k) => FIELD_LABEL[k] ?? k), "Photos", "Agent", "Agent phone", "Agent email"],
     listings.map((l) => [
       ...LISTING_COLUMNS.map((k) => l[k]),

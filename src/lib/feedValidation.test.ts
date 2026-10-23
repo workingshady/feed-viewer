@@ -90,3 +90,13 @@ describe("agent reports (ZibaAi format)", () => {
     expect(agentsJson(source, version, listings).agents[0]).not.toHaveProperty("listings");
   });
 });
+
+describe("agent concentration", () => {
+  it("warns when one agent holds most of a large feed", () => {
+    const many = Array.from({ length: 120 }, (_, i) =>
+      prop(`TA-S-${String(i).padStart(5, "0")}`, "RS", "<price>1500000</price>").replace("</property>", "<agent><name>Default Agent</name><email>info@x.ae</email></agent></property>"),
+    );
+    const c = checkFeed(parseXmlString(feed(...many)).listings);
+    expect(c.issues.find((i) => i.code === "agent_concentration")).toMatchObject({ severity: "warning", count: 120 });
+  });
+});
