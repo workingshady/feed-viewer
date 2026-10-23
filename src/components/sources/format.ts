@@ -17,7 +17,9 @@ export const timeAgo = (iso: string) => formatDistanceToNow(new Date(iso), { add
 export const pct = (share: number) => `${Math.round(share * 100)}%`;
 
 export function downloadText(fileName: string, text: string, type = "text/csv") {
-  const url = URL.createObjectURL(new Blob([text], { type }));
+  // A UTF-8 BOM makes Excel read Arabic text and symbols in CSVs correctly.
+  const body = type === "text/csv" ? "\uFEFF" + text : text;
+  const url = URL.createObjectURL(new Blob([body], { type: `${type};charset=utf-8` }));
   const a = Object.assign(document.createElement("a"), { href: url, download: fileName });
   a.click();
   URL.revokeObjectURL(url);

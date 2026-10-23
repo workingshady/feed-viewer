@@ -1,6 +1,7 @@
 import { apiFetch, jsonBody } from "@/lib/api";
 import type { ImportResult, MappingConfig } from "@/lib/types";
 import type { VersionStats } from "@/lib/versionStats";
+import type { FeedCheckResult } from "@/lib/feedValidation";
 
 export type VersionDTO = {
   id: string;
@@ -18,7 +19,12 @@ export type VersionDTO = {
   added: number;
   removed: number;
   changed: number;
-  warnings: { warnings: string[]; errors: string[] } | null;
+  warnings: {
+    warnings: string[];
+    errors: string[];
+    /** Present on versions uploaded after feed checks were added. */
+    checks?: Pick<FeedCheckResult, "gate" | "issues" | "rentPeriods">;
+  } | null;
   stats: VersionStats | null;
   note: string | null;
   pinned: boolean;

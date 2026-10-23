@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDownRight, ArrowUpRight, GitCompare, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Download, GitCompare, Loader2 } from "lucide-react";
+import { completenessDelta } from "@/lib/feedValidation";
+import { changesCsv } from "@/lib/reports";
+import { downloadText } from "./format";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -87,7 +90,12 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
   const data = useMemo(() => {
     if (!after.data || (prev && !before.data)) return null;
     const diff = diffListings(before.data ?? [], after.data);
-    return { diff, moves: priceMoves(diff), fields: changedFieldCounts(diff) };
+    return {
+      diff,
+      moves: priceMoves(diff),
+      fields: changedFieldCounts(diff),
+      completeness: completenessDelta(before.data ?? [], after.data),
+    };
   }, [after.data, before.data, prev]);
 
   if (!live) return <p className="py-8 text-center text-sm text-muted-foreground">No live version yet.</p>;
@@ -106,7 +114,8 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
     );
   }
 
-  const { diff, moves, fields } = data;
+  const { diff, moves, fields, completeness } = data;
+  const drops = completeness.filter((c) => c.flagged);
   return (
     <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -116,12 +125,57 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
           <DiffBadges added={diff.added.length} removed={diff.removed.length} changed={diff.changed.length} />
           <span className="text-xs text-muted-foreground">{diff.unchangedCount.toLocaleString()} unchanged</span>
         </p>
-        <Button asChild variant="outline" size="sm">
-          <Link to={`/feed-compare?source=${source.id}&a=${prev.id}&b=${live.id}`}>
-            <GitCompare className="mr-1.5 h-4 w-4" /> Field-by-field compare
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => downloadText(`${source.name}-v${prev.number}-to-v${live.number}-changes.csv`, changesCsv(diff))}
+          >
+            <Download className="mr-1.5 h-4 w-4" /> Changes (CSV)
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/feed-compare?source=${source.id}&a=${prev.id}&b=${live.id}`}>
+              <GitCompare className="mr-1.5 h-4 w-4" /> Field-by-field compare
+            </Link>
+          </Button>
+        </div>
       </div>
+
+      {drops.length > 0 && (
+        <div role="alert" className="flex gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+          <span>
+            Data got thinner in v{live.number}:{" "}
+            {drops.map((d) => `${d.field} ${Math.round(d.before * 100)}% → ${Math.round(d.after * 100)}%`).join(", ")}. Check the agency's
+            export or the field mapping.
+          </span>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Field completeness, v{prev.number} → v{live.number}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            {completeness.map((c) => (
+              <li key={c.field} className="flex items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{c.field}</span>
+                <span className="font-mono tabular-nums">
+                  {Math.round(c.before * 100)}% → {Math.round(c.after * 100)}%
+                </span>
+                <span
+                  className={`w-12 text-right font-mono tabular-nums ${
+                    c.flagged ? "font-semibold text-destructive-text" : c.delta > 0.005 ? "text-success" : "text-muted-foreground"
+                  }`}
+                >
+                  {Math.abs(c.delta) < 0.005 ? "=" : `${c.delta > 0 ? "+" : ""}${Math.round(c.delta * 100)}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
         <Card>

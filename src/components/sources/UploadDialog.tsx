@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, FileUp, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, FileUp, Loader2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { diffCounts } from "@/lib/versionDiff";
 import { SOURCES_KEY } from "@/hooks/useSources";
 import { DiffBadges } from "./VersionRow";
+import { FeedChecksSummary } from "./FeedChecks";
 import { ScoreBadge } from "./health";
 import { formatBytes } from "./format";
 
@@ -254,12 +255,8 @@ export function UploadDialog({
                           vs live <DiffBadges {...diffCounts(row.prepared.diff)} />
                         </span>
                       )}
-                      {row.prepared.result.warnings.length > 0 && (
-                        <span className="inline-flex items-center gap-1 text-warning">
-                          <AlertTriangle className="h-3 w-3" aria-hidden /> {row.prepared.result.warnings.length} warnings
-                        </span>
-                      )}
                     </div>
+                    <FeedChecksSummary result={row.prepared.checks} />
                     {!fixedSource && (
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <Select value={row.target ?? ""} onValueChange={(v) => patch(row.key, { target: v })}>

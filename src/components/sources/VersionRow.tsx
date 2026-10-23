@@ -8,6 +8,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -15,8 +16,13 @@ import { cn } from "@/lib/utils";
 import type { SourceDTO, VersionDTO } from "@/lib/sourcesApi";
 import { fetchVersionListings, fetchVersionXml } from "@/lib/versionBlobs";
 import { qualityIssuesCsv } from "@/lib/versionStats";
+import { checkFeed } from "@/lib/feedValidation";
+import { changesCsv, feedCheckCsv, listingsCsv } from "@/lib/reports";
+import { diffListings } from "@/lib/versionDiff";
+import { toast } from "sonner";
 import { useUpdateVersion } from "@/hooks/useSources";
 import { ScoreBadge } from "./health";
+import { GateBadge } from "./FeedChecks";
 import { downloadText, formatBytes, timeAgo } from "./format";
 
 export function DiffBadges({ added, removed, changed }: { added: number; removed: number; changed: number }) {
@@ -75,9 +81,20 @@ export function VersionRow({
     downloadText(version.fileName, await fetchVersionXml(version.xmlBlobUrl), "application/xml");
   };
 
-  const exportIssues = async () => {
-    const listings = await fetchVersionListings(version.listingsBlobUrl);
-    downloadText(`${source.name}-v${version.number}-quality-issues.csv`, qualityIssuesCsv(listings));
+  const base = `${source.name}-v${version.number}`;
+  const download = async (kind: "quality" | "checks" | "listings" | "changes") => {
+    try {
+      const listings = await fetchVersionListings(version.listingsBlobUrl);
+      if (kind === "quality") downloadText(`${base}-quality-issues.csv`, qualityIssuesCsv(listings));
+      if (kind === "checks") downloadText(`${base}-feed-checks.csv`, feedCheckCsv(checkFeed(listings)));
+      if (kind === "listings") downloadText(`${base}-listings.csv`, listingsCsv(listings));
+      if (kind === "changes" && previous) {
+        const before = await fetchVersionListings(previous.listingsBlobUrl);
+        downloadText(`${source.name}-v${previous.number}-to-v${version.number}-changes.csv`, changesCsv(diffListings(before, listings)));
+      }
+    } catch (e) {
+      toast.error(`Download failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   return (
@@ -128,8 +145,21 @@ export function VersionRow({
             <DropdownMenuItem onSelect={() => void downloadXml()}>
               <Download className="mr-2 h-4 w-4" /> Download original XML
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void exportIssues()}>
-              <FileWarning className="mr-2 h-4 w-4" /> Export quality issues (CSV)
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Reports (CSV)</DropdownMenuLabel>
+            <DropdownMenuItem onSelect={() => void download("checks")}>
+              <FileWarning className="mr-2 h-4 w-4" /> Feed checks
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void download("quality")}>
+              <FileWarning className="mr-2 h-4 w-4" /> Quality issues per listing
+            </DropdownMenuItem>
+            {previous && (
+              <DropdownMenuItem onSelect={() => void download("changes")}>
+                <GitCompare className="mr-2 h-4 w-4" /> Changes since v{previous.number}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={() => void download("listings")}>
+              <Download className="mr-2 h-4 w-4" /> All listings
             </DropdownMenuItem>
             {canEdit && (
               <>
@@ -170,7 +200,26 @@ export function VersionRow({
           )}
         </div>
       )}
-      {issues > 0 && (
+      {version.warnings?.checks ? (
+        <details className="mt-2 text-xs">
+          <summary className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+            <GateBadge gate={version.warnings.checks.gate} />
+            {version.warnings.checks.issues.filter((i) => i.severity === "error").length} error types ·{" "}
+            {version.warnings.checks.issues.filter((i) => i.severity === "warning").length} warning types
+          </summary>
+          <ul className="mt-1 space-y-0.5 pl-1">
+            {version.warnings.checks.issues.map((i) => (
+              <li key={i.code} className="flex gap-2">
+                <span className={i.severity === "error" ? "text-destructive-text" : i.severity === "warning" ? "text-warning" : "text-muted-foreground"}>
+                  {i.severity}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{i.title}</span>
+                <span className="font-mono tabular-nums text-muted-foreground">{i.count.toLocaleString()}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : issues > 0 && (
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-muted-foreground">
             {version.warnings?.errors.length ?? 0} errors · {version.warnings?.warnings.length ?? 0} warnings from parsing

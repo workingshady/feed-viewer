@@ -3,6 +3,7 @@ import { parseXmlStringAsync } from "@/lib/xmlParser";
 import { fingerprintMappingConfig } from "@/lib/mappingFingerprint";
 import { diffCounts, diffListings, type VersionDiff } from "@/lib/versionDiff";
 import { computeVersionStats, type VersionStats } from "@/lib/versionStats";
+import { checkFeed, type FeedCheckResult } from "@/lib/feedValidation";
 import { fetchVersionListings, gzipText } from "@/lib/versionBlobs";
 import { uploadBlob } from "@/lib/blobUpload";
 import {
@@ -36,6 +37,8 @@ export type PreparedVersion = {
   sha256: string;
   result: ImportResult;
   stats: VersionStats;
+  /** Grouped feed checks (errors, warnings, notes) with a pass/warn/fail gate. */
+  checks: FeedCheckResult;
   /** Existing source this file belongs to (by agency name), if any. */
   matched: SourceDTO | null;
   /** Diff against the matched source's live version (null when there is none). */
@@ -95,6 +98,7 @@ export async function prepareVersion(
     sha256,
     result,
     stats: computeVersionStats(result.listings),
+    checks: checkFeed(result.listings),
     matched,
     diff,
     mapping,
@@ -134,7 +138,8 @@ export async function commitVersion(
   const listings: Listing[] = p.result.listings;
   onStage?.({ stage: "compressing" });
   const xmlGz = gzipText(p.xml);
-  const listingsGz = gzipText(JSON.stringify(listings));
+  // Raw XML per listing roughly doubles the file; detail pages read it from the original XML instead.
+  const listingsGz = gzipText(JSON.stringify(listings.map(({ rawXml: _raw, ...rest }) => rest)));
   // Report combined progress of both files, weighted by size.
   const total = xmlGz.length + listingsGz.length;
   const done = [0, 0];
@@ -163,7 +168,11 @@ export async function commitVersion(
       listingsBlobUrl: listingsBlob.url,
       listingCount: listings.length,
       ...counts,
-      warnings: { warnings: p.result.warnings.slice(0, 50), errors: p.result.errors.slice(0, 50) },
+      warnings: {
+        warnings: p.result.warnings.slice(0, 50),
+        errors: p.result.errors.slice(0, 50),
+        checks: { gate: p.checks.gate, issues: p.checks.issues, rentPeriods: p.checks.rentPeriods },
+      },
       stats: p.stats,
       apply: "auto",
     });

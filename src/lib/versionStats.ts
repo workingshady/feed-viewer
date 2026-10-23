@@ -1,4 +1,5 @@
 import type { Listing } from "@/lib/types";
+import { annualizedPrice } from "@/lib/feedValidation";
 
 /**
  * Listing quality checks, modelled on portal quality scores (Property Finder / Bayut weigh photo
@@ -72,7 +73,7 @@ export function computeVersionStats(listings: Listing[]): VersionStats {
     total += score;
     for (const c of QUALITY_CHECKS) if (!failed.includes(c.key)) passCounts[c.key]++;
     purpose[l.purpose] = (purpose[l.purpose] ?? 0) + 1;
-    if (l.price > 0 && (l.purpose === "sale" || l.purpose === "rent")) prices[l.purpose].push(l.price);
+    if (l.price > 0 && (l.purpose === "sale" || l.purpose === "rent")) prices[l.purpose].push(annualizedPrice(l));
     if (l.propertyType) types.set(l.propertyType, (types.get(l.propertyType) ?? 0) + 1);
     if (l.community) communities.add(l.community.trim().toLowerCase());
     const agentKey = l.agent?.email?.trim().toLowerCase() || l.agent?.name?.trim().toLowerCase();

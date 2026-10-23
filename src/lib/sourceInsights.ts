@@ -1,5 +1,6 @@
 import type { Listing } from "@/lib/types";
 import type { VersionDiff } from "@/lib/versionDiff";
+import { annualizedPrice } from "@/lib/feedValidation";
 
 export type Bucket = { label: string; count: number };
 
@@ -18,7 +19,9 @@ export function priceBands(listings: Listing[], purpose: "sale" | "rent"): Bucke
   ];
   for (const l of listings) {
     if (l.purpose !== purpose || !(l.price > 0)) continue;
-    const i = edges.findIndex((e) => l.price < e);
+    // Rents are compared per year whatever period the feed used.
+    const price = annualizedPrice(l);
+    const i = edges.findIndex((e) => price < e);
     buckets[i === -1 ? buckets.length - 1 : i].count++;
   }
   return buckets;

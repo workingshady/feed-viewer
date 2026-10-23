@@ -16,6 +16,14 @@ export function formatPriceFull(p: number, locale?: string): string {
 }
 
 export function listingPriceEyebrow(purpose: Listing["purpose"]): string {
-  if (purpose === "rent") return "Annual Rent";
+  if (purpose === "rent") return "Rent";
   return "Asking Price";
 }
+
+/** Label shown under a rent price; feeds without a period are treated as yearly (UAE convention). */
+export const RENT_PERIOD_LABEL: Record<string, string> = {
+  yearly: "per year",
+  monthly: "per month",
+  weekly: "per week",
+  daily: "per day",
+};

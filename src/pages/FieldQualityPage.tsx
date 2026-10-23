@@ -1,3 +1,4 @@
+import { useListingsWithRawXml } from "@/hooks/useListingRawXml";
 import { Fragment, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -168,7 +169,7 @@ export default function FieldQualityPage() {
   const version = selectedSource
     ? (pickedVersionId === "live" ? live : selectedSource.versions.find((v) => v.id === pickedVersionId)) ?? live
     : null;
-  const listingsQ = useVersionListings(version);
+  const listingsQ = useListingsWithRawXml(version);
 
   if (!selectedSource || !version) {
     return (

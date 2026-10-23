@@ -153,7 +153,7 @@ function DeckCard({
           </div>
 
           <p className="text-[9px] uppercase tracking-[0.2em] text-white/45 font-semibold mb-1 font-body">
-            {listing.purpose === "rent" ? "Annual rent" : "Asking price"}
+            {listing.purpose === "rent" ? "Rent" : "Asking price"}
           </p>
           <div className="text-xl sm:text-2xl font-heading font-semibold text-white mb-3 tracking-tight drop-shadow-sm">
             {formatListingPriceShort(listing)}

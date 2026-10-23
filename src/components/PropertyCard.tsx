@@ -2,7 +2,7 @@ import {
   addCompareListingId,
   removeCompareListingId,
 } from "@/lib/compareSelection";
-import { formatPriceCompact } from "@/lib/displayPrice";
+import { formatPriceCompact, RENT_PERIOD_LABEL } from "@/lib/displayPrice";
 import { isListingFieldFilled } from "@/lib/listingFieldPresence";
 import { canPlayInlineOnSite, isYouTubeVideoUrl, normalizeVideoTourPageUrl } from "@/lib/videoTourUrl";
 import { VideoTourPlayer } from "@/components/VideoTourPlayer";
@@ -121,7 +121,7 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
   const priceOk = isListingFieldFilled(listing, "price");
   const purposeLabel = listing.purpose === "sale" ? "For Sale" : listing.purpose === "rent" ? "For Rent" : "";
   const loc = listing.community || listing.city || listing.address || "Unknown location";
-  const priceEyebrow = listing.purpose === "rent" ? "Annual Rent" : "Asking Price";
+  const priceEyebrow = listing.purpose === "rent" ? "Rent" : "Asking Price";
   const videoTourRaw = listing.videoTourUrl?.trim() ?? "";
   const videoTourHref = normalizeVideoTourPageUrl(videoTourRaw);
   const hasVideoTour = !!videoTourHref;
@@ -371,7 +371,7 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
               )}
             </div>
             {listing.purpose === "rent" && (
-              <div className="text-[10px] text-muted-foreground mt-0.5">per year</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{RENT_PERIOD_LABEL[listing.rentPeriod || "yearly"]}</div>
             )}
           </div>
           <span className="mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary-text border border-primary/20 whitespace-nowrap shrink-0 max-w-[45%] truncate">

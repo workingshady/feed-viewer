@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import XmlTree from "@/components/XmlTree";
 import { addCompareListingId } from "@/lib/compareSelection";
 import { formatPriceCompact, formatPriceFull, listingPriceEyebrow } from "@/lib/displayPrice";
+import { useListingRawXml } from "@/hooks/useListingRawXml";
 import { isGitStyleTextField } from "@/lib/importDiffInsights";
 import { formatListingFieldValue } from "@/lib/listingFieldFormat";
 import { isListingFieldFilled } from "@/lib/listingFieldPresence";
@@ -122,7 +123,7 @@ const ListingDetailPage = () => {
     return names.sort((a, b) => a.localeCompare(b));
   }, [listingsByAgency, listing?.id]);
 
-  const rawXml = listing?.rawXml || "";
+  const { rawXml } = useListingRawXml(listing);
   const xmlTree = useMemo(() => (rawXml ? buildXmlTree(rawXml) : []), [rawXml]);
   const xmlFlat = useMemo(() => (rawXml ? flattenXmlString(rawXml, "property") : []), [rawXml]);
   const mappedByPath = useMemo(() => {
@@ -1210,7 +1211,7 @@ const ListingDetailPage = () => {
                   id="listing-detail-raw-xml"
                   className="px-6 pb-6 bg-muted text-xs font-mono text-muted-foreground overflow-x-auto max-h-96 leading-relaxed border-t border-border"
                 >
-                  {listing.rawXml}
+                  {rawXml}
                 </pre>
               )}
             </div>

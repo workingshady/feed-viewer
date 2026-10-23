@@ -51,7 +51,7 @@ export function MarketCard({ live }: { live: VersionDTO }) {
           <div className="grid gap-6 md:grid-cols-3">
             <section aria-label="Price bands">
               <h4 className="mb-2 text-xs font-semibold text-foreground">
-                {purpose === "sale" ? "Sale price (AED)" : "Annual rent (AED)"}
+                {purpose === "sale" ? "Sale price (AED)" : "Rent per year (AED)"}
               </h4>
               <BarList buckets={insights.bands} emptyText={`No ${purpose === "sale" ? "sale" : "rental"} listings`} />
             </section>

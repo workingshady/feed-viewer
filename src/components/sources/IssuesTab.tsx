@@ -11,6 +11,8 @@ import { QUALITY_CHECKS, listingQuality, qualityIssuesCsv, type QualityCheckKey 
 import { ScoreBadge } from "./health";
 import { listingHref } from "./BarList";
 import { downloadText } from "./format";
+import { FeedChecksCard } from "./FeedChecks";
+import { checkFeed } from "@/lib/feedValidation";
 
 const PAGE = 50;
 const LABEL = Object.fromEntries(QUALITY_CHECKS.map((c) => [c.key, c.label])) as Record<QualityCheckKey, string>;
@@ -31,6 +33,8 @@ export function IssuesTab({ source }: { source: SourceDTO }) {
         .sort((a, b) => a.score - b.score),
     [listings],
   );
+
+  const checks = useMemo(() => (listings ? checkFeed(listings) : null), [listings]);
 
   const counts = useMemo(() => {
     const c = Object.fromEntries(QUALITY_CHECKS.map((q) => [q.key, 0])) as Record<QualityCheckKey, number>;
@@ -55,8 +59,21 @@ export function IssuesTab({ source }: { source: SourceDTO }) {
       </p>
     );
   }
+  const feedChecks = checks && (
+    <FeedChecksCard
+      result={checks}
+      title={`Feed checks · v${live.number}`}
+      fileName={`${source.name}-v${live.number}-feed-checks.csv`}
+      exampleHref={(ref) => `/listing/${encodeURIComponent(`${source.id}:${ref}`)}`}
+    />
+  );
   if (rows.length === 0) {
-    return <p className="py-8 text-center text-sm text-success">Every listing in v{live.number} passes all quality checks.</p>;
+    return (
+      <div className="space-y-4">
+        {feedChecks}
+        <p className="py-4 text-center text-sm text-success">Every listing in v{live.number} passes all quality checks.</p>
+      </div>
+    );
   }
 
   const chip = (key: QualityCheckKey | "any", label: string, n: number) => (
@@ -78,7 +95,10 @@ export function IssuesTab({ source }: { source: SourceDTO }) {
   );
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {feedChecks}
+      <section className="space-y-3" aria-labelledby="quality-list-heading">
+      <h3 id="quality-list-heading" className="text-sm font-semibold">Listings below full quality score</h3>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter by failing check">
         {chip("any", "Any issue", rows.length)}
         {QUALITY_CHECKS.filter((c) => counts[c.key] > 0).map((c) => chip(c.key, c.label, counts[c.key]))}
@@ -159,6 +179,7 @@ export function IssuesTab({ source }: { source: SourceDTO }) {
           </Button>
         )}
       </div>
+      </section>
     </div>
   );
 }

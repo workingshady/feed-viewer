@@ -17,9 +17,12 @@ function getTextContent(el: Element, tag: string): string {
   return child?.textContent?.trim() || '';
 }
 
+const RENT_PERIODS = ['yearly', 'monthly', 'weekly', 'daily'] as const;
+
 function parseOfferingType(val: string): 'sale' | 'rent' | 'unknown' {
   const v = val.toLowerCase();
-  if (v === 'rs' || v.includes('sale')) return 'sale';
+  // RS/CS = residential/commercial sale, RR/CR = residential/commercial rent (Property Finder codes).
+  if (v === 'rs' || v === 'cs' || v.includes('sale')) return 'sale';
   if (v === 'rr' || v === 'cr' || v.includes('rent')) return 'rent';
   return 'unknown';
 }
@@ -241,7 +244,21 @@ function buildListingFromPropertyEl(
   const subCommunity = coerceListingField('subCommunity', getByPath(getMappedField(mappings, 'subCommunity') || 'property.sub_community'), defaults);
   const propertyName = coerceListingField('propertyName', getByPath(getMappedField(mappings, 'propertyName') || 'property.property_name'), defaults);
 
-  const price = coerceListingField('price', getByPath(getMappedField(mappings, 'price') || 'property.price'), defaults);
+  // Rentals often nest the amount under its period: <price><yearly>120000</yearly></price>.
+  const mappedPricePath = getMappedField(mappings, 'price');
+  let rentPeriod: Listing['rentPeriod'] = '';
+  let rawPrice = getByPath(mappedPricePath || 'property.price');
+  if (!mappedPricePath && (rawPrice == null || rawPrice === '')) {
+    for (const period of RENT_PERIODS) {
+      const v = getByPath(`property.price.${period}`);
+      if (v != null && v !== '') {
+        rawPrice = v;
+        rentPeriod = period;
+        break;
+      }
+    }
+  }
+  const price = coerceListingField('price', rawPrice, defaults);
   const priceOnApplication = coerceListingField('priceOnApplication', getByPath(getMappedField(mappings, 'priceOnApplication') || 'property.price_on_application'), defaults);
   const currency = coerceListingField('currency', getByPath(getMappedField(mappings, 'currency') || null), defaults);
   const paymentMethod = coerceListingField('paymentMethod', getByPath(getMappedField(mappings, 'paymentMethod') || 'property.payment_method'), defaults);
@@ -356,6 +373,7 @@ function buildListingFromPropertyEl(
     title: String(title || ''),
     description: String(description || ''),
     price,
+    rentPeriod,
     priceOnApplication: String(priceOnApplication || ''),
     currency: String(currency || defaults.currency),
     paymentMethod: String(paymentMethod || ''),

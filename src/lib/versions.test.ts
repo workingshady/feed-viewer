@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { diffCounts, diffListings } from "@/lib/versionDiff";
 import { computeVersionStats, listingQuality } from "@/lib/versionStats";
 import { commitVersion, matchSource, type PreparedVersion } from "@/lib/uploadVersion";
+import { checkFeed } from "@/lib/feedValidation";
 import type { SourceDTO } from "@/lib/sourcesApi";
 import type { Listing } from "@/lib/types";
 
@@ -53,6 +54,7 @@ describe("commitVersion", () => {
     sha256: "a".repeat(64),
     result: { success: true, listings: [listing("a")], totalCount: 1, warnings: [], errors: [], detectedNodes: [] },
     stats: computeVersionStats([listing("a")]),
+    checks: checkFeed([listing("a")]),
     matched: null,
     diff: null,
     mapping: null,

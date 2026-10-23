@@ -4,6 +4,8 @@ export interface Listing {
   title: string;
   description: string;
   price: number;
+  /** Rent period when the feed states one (e.g. <price><monthly>); empty for sales or unknown. */
+  rentPeriod?: "yearly" | "monthly" | "weekly" | "daily" | "";
   priceOnApplication: string;
   currency: string;
   paymentMethod: string;
