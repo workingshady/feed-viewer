@@ -17,7 +17,9 @@ import { liveVersionOf, type SourceDTO, type VersionDTO } from "@/lib/sourcesApi
 import { QUALITY_CHECKS } from "@/lib/versionStats";
 import { formatPriceCompact } from "@/lib/displayPrice";
 import { RECHARTS_TOOLTIP_CONTENT, RECHARTS_TOOLTIP_ITEM, RECHARTS_TOOLTIP_LABEL } from "@/lib/chartTheme";
-import { useReparseLiveVersion, useUpdateSource } from "@/hooks/useSources";
+import { useUpdateSource } from "@/hooks/useSources";
+import { BulkDeleteDialog, ReparseDialog, ReportsMenu } from "./BulkDialogs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAppData } from "@/providers/useAppData";
 import { HealthDot, ScoreBadge, healthOf, healthReasons } from "./health";
 import { ApplyVersionDialog, DeleteSourceDialog, DeleteVersionDialog } from "./VersionDialogs";
@@ -178,7 +180,8 @@ export function SourceDetail({
   const live = liveVersionOf(source);
   const health = healthOf(source);
   const reasons = healthReasons(source);
-  const reparse = useReparseLiveVersion();
+  const [reparseOpen, setReparseOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [params, setParams] = useSearchParams();
   const tabParam = params.get("tab") as SourceTab | null;
   const tab: SourceTab = tabParam && SOURCE_TABS.includes(tabParam) ? tabParam : "overview";
@@ -224,6 +227,7 @@ export function SourceDetail({
             <Link to="/listings">View listings</Link>
           </Button>
           {live && <ShareDialog kind="source" sourceId={source.id} label={source.name} />}
+          {live && <ReportsMenu source={source} version={live} />}
           {canEdit && (
             <>
               <Button size="sm" onClick={onUpload}>
@@ -232,16 +236,28 @@ export function SourceDetail({
               <Button
                 variant="outline"
                 size="sm"
-                disabled={!live || reparse.isPending}
-                onClick={() => reparse.mutate({ source, sources })}
-                title="Parse the live file again with this source's current field mapping"
+                disabled={source.versions.length === 0}
+                onClick={() => setReparseOpen(true)}
+                title="Parse versions again with the current parser and field mapping"
               >
-                <RefreshCw className={`mr-1.5 h-4 w-4 ${reparse.isPending ? "animate-spin" : ""}`} /> Re-parse
+                <RefreshCw className="mr-1.5 h-4 w-4" /> Re-parse
               </Button>
               <SettingsPopover key={source.id + source.updatedAt} source={source} />
-              <Button variant="outline" size="sm" onClick={() => setDeleteSource(source)} aria-label="Delete source">
-                <Trash2 className="h-4 w-4 text-destructive-text" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" aria-label="Delete">
+                    <Trash2 className="h-4 w-4 text-destructive-text" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setBulkDeleteOpen(true)} disabled={source.versions.length < 2}>
+                    Delete versions…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setDeleteSource(source)} className="text-destructive-text focus:text-destructive-text">
+                    Delete entire source…
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           )}
         </div>
@@ -298,6 +314,8 @@ export function SourceDetail({
 
       <ApplyVersionDialog target={applyTarget} onClose={() => setApplyTarget(null)} />
       <DeleteVersionDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />
+      <ReparseDialog key={`rp-${source.id}-${source.activeVersionId}`} source={source} open={reparseOpen} onOpenChange={setReparseOpen} />
+      <BulkDeleteDialog key={`bd-${source.id}`} source={source} open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen} />
       <DeleteSourceDialog source={deleteSource} onClose={() => setDeleteSource(null)} onDeleted={onDeleted} />
     </div>
   );

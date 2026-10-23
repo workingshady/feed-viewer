@@ -62,3 +62,31 @@ describe("ZibaAi enriched XML", () => {
     expect(drop.find((d) => d.field === "Map location")).toMatchObject({ before: 1, after: 0, flagged: true });
   });
 });
+
+describe("agent reports (ZibaAi format)", () => {
+  it("groups listings by agent with totals, codes and references", async () => {
+    const { agentsJson, agentsReportJson } = await import("@/lib/versionReports");
+    const xml = feed(
+      prop("TA-R-00001", "RR", "<price><yearly>120000</yearly></price>").replace(
+        "</property>",
+        "<agent><name>Sara</name><email>sara@x.ae</email><phone>+971500</phone><license_no>123</license_no><info>Advisor</info></agent></property>",
+      ),
+      prop("TA-S-00002", "CS", "<price>2500000</price>").replace("</property>", "<agent><name>Sara</name><email>SARA@x.ae</email></agent></property>"),
+      prop("TA-S-00003", "RS", "<price>900000</price>"),
+    );
+    const listings = parseXmlString(xml).listings;
+    const source = { name: "Test", agencyName: "Test Agency", agencyInfo: { name: "Test Agency" } } as never;
+    const version = { number: 3, fileName: "f.xml", createdAt: "2026-10-23T00:00:00Z" } as never;
+    const report = agentsReportJson(source, version, listings);
+    expect(report.totals).toMatchObject({
+      total_agents: 1,
+      total_listings: 3,
+      listings_attributed: 2,
+      listings_unattributed: 1,
+      by_offering_type: { RR: 1, CS: 1, RS: 1 },
+      by_property_type: { AP: 3 },
+    });
+    expect(report.agents[0]).toMatchObject({ name: "Sara", license_no: "123", info: "Advisor", listing_count: 2, reference_numbers: ["TA-R-00001", "TA-S-00002"] });
+    expect(agentsJson(source, version, listings).agents[0]).not.toHaveProperty("listings");
+  });
+});

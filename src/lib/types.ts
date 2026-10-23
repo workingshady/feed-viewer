@@ -40,7 +40,17 @@ export interface Listing {
     phone: string;
     email: string;
     photo: string;
+    /** Broker licence (e.g. RERA BRN), when the feed provides it. */
+    licenseNo?: string;
+    /** Agent identifier or profile URL from the feed. */
+    id?: string;
+    /** Free-text role / languages line. */
+    info?: string;
   };
+  /** Raw offering code from the feed (RS, RR, CS, CR) — purpose is the normalised form. */
+  offeringType?: string;
+  /** Raw property type code from the feed (AP, VH…) — propertyType is the readable name. */
+  propertyTypeCode?: string;
   rawXml: string;
   furnished: string;
   parking: number;

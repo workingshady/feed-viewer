@@ -4,6 +4,13 @@ import { FieldMapping, ImportResult, Listing, MappingConfig, ParsedXmlNode, XmlF
 /** Max XML string length for single-file and stream-folder imports (JS chars; ASCII-heavy feeds ≈ bytes). */
 export const MAX_XML_TEXT_CHARS = 50_000_000;
 
+/**
+ * Bump when parsing changes in a way that changes output for the same file. It is part of each
+ * version's fingerprint, so "Re-parse" creates a new version instead of a duplicate.
+ * 2: period-nested rent prices, CS offering, agent licence/id/info, raw type codes.
+ */
+export const PARSER_VERSION = 2;
+
 function sanitizeXml(xml: string): { xml: string; removed: number } {
   // XML 1.0 forbids most ASCII control chars (except tab, LF, CR).
   // Some real-world feeds contain NULs or other control characters; DOMParser will hard-fail on them.
@@ -365,6 +372,9 @@ function buildListingFromPropertyEl(
     phone: agentEl ? getTextContent(agentEl, 'phone') : '',
     email: agentEl ? getTextContent(agentEl, 'email') : '',
     photo: agentEl ? getTextContent(agentEl, 'photo') : '',
+    licenseNo: agentEl ? getTextContent(agentEl, 'license_no') : '',
+    id: agentEl ? getTextContent(agentEl, 'id') : '',
+    info: agentEl ? getTextContent(agentEl, 'info') : '',
   };
 
   return {
@@ -404,6 +414,8 @@ function buildListingFromPropertyEl(
     videoTourUrl: String(videoTourUrl || ''),
     floorPlanUrl: String(floorPlanUrl || ''),
     agent,
+    offeringType: typeof rawOffering === "string" ? rawOffering.trim().toUpperCase() : '',
+    propertyTypeCode: typeof rawPropType === "string" ? rawPropType.trim().toUpperCase() : '',
     rawXml,
     furnished: String(furnished || ''),
     parking,

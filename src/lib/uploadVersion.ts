@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { parseXmlStringAsync } from "@/lib/xmlParser";
+import { PARSER_VERSION, parseXmlStringAsync } from "@/lib/xmlParser";
 import { fingerprintMappingConfig } from "@/lib/mappingFingerprint";
 import { diffCounts, diffListings, type VersionDiff } from "@/lib/versionDiff";
 import { computeVersionStats, type VersionStats } from "@/lib/versionStats";
@@ -63,9 +63,13 @@ async function sha256Hex(text: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** "" for auto-detect, otherwise a short hash of the mapping (stored per version). */
+/**
+ * Identifies how a file was parsed: parser version + mapping. The same file with the same
+ * fingerprint is a duplicate; a newer parser or a changed mapping makes a new version.
+ */
 async function mappingFingerprint(mapping: MappingConfig | null): Promise<string> {
-  return mapping ? (await sha256Hex(fingerprintMappingConfig(mapping))).slice(0, 32) : "";
+  const map = mapping ? (await sha256Hex(fingerprintMappingConfig(mapping))).slice(0, 32) : "auto";
+  return `p${PARSER_VERSION}:${map}`;
 }
 
 /** Parses a file in the browser and prepares its preview against the matching source. */
@@ -123,6 +127,8 @@ export async function commitVersion(
   target: CommitTarget,
   deps: CommitDeps = defaultDeps,
   onStage?: (s: UploadStage) => void,
+  /** "never" saves without making it live (e.g. re-parsing an older version). */
+  apply: "auto" | "never" = "auto",
 ): Promise<RegisterResult & { source: SourceDTO | { id: string; name: string } }> {
   const source =
     "create" in target
@@ -174,7 +180,7 @@ export async function commitVersion(
         checks: { gate: p.checks.gate, issues: p.checks.issues, rentPeriods: p.checks.rentPeriods },
       },
       stats: p.stats,
-      apply: "auto",
+      apply,
     });
     return { ...res, source };
   } catch (e) {

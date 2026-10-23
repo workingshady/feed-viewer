@@ -12,6 +12,7 @@ import { CompareTray } from "@/components/CompareTray";
 import { SiteFooterGate } from "@/components/SiteFooter";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
 import { TopProgressBar } from "@/components/TopProgressBar";
+import { JobsPanel } from "@/components/JobsPanel";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
@@ -118,6 +119,7 @@ const App = () => (
           <BrowserRouter>
             <AppCommandPalette />
             <CompareTray />
+            <JobsPanel />
             <div className="flex min-h-[100dvh] flex-col">
               <div className="flex min-h-0 flex-1 flex-col">
                 <Suspense fallback={<RouteFallback />}>

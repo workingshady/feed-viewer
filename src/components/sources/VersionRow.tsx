@@ -16,9 +16,7 @@ import { cn } from "@/lib/utils";
 import type { SourceDTO, VersionDTO } from "@/lib/sourcesApi";
 import { fetchVersionListings, fetchVersionXml } from "@/lib/versionBlobs";
 import { qualityIssuesCsv } from "@/lib/versionStats";
-import { checkFeed } from "@/lib/feedValidation";
-import { changesCsv, feedCheckCsv, listingsCsv } from "@/lib/reports";
-import { diffListings } from "@/lib/versionDiff";
+import { REPORTS, downloadVersionReport, type ReportKind } from "@/lib/versionReports";
 import { toast } from "sonner";
 import { useUpdateVersion } from "@/hooks/useSources";
 import { ScoreBadge } from "./health";
@@ -81,19 +79,13 @@ export function VersionRow({
     downloadText(version.fileName, await fetchVersionXml(version.xmlBlobUrl), "application/xml");
   };
 
-  const base = `${source.name}-v${version.number}`;
-  const download = async (kind: "quality" | "checks" | "listings" | "changes") => {
+  const download = async (kind: ReportKind) => {
+    const id = toast.loading("Preparing report…");
     try {
-      const listings = await fetchVersionListings(version.listingsBlobUrl);
-      if (kind === "quality") downloadText(`${base}-quality-issues.csv`, qualityIssuesCsv(listings));
-      if (kind === "checks") downloadText(`${base}-feed-checks.csv`, feedCheckCsv(checkFeed(listings)));
-      if (kind === "listings") downloadText(`${base}-listings.csv`, listingsCsv(listings));
-      if (kind === "changes" && previous) {
-        const before = await fetchVersionListings(previous.listingsBlobUrl);
-        downloadText(`${source.name}-v${previous.number}-to-v${version.number}-changes.csv`, changesCsv(diffListings(before, listings)));
-      }
+      await downloadVersionReport(kind, source, version, previous);
+      toast.success("Report downloaded", { id });
     } catch (e) {
-      toast.error(`Download failed: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`Download failed: ${e instanceof Error ? e.message : String(e)}`, { id });
     }
   };
 
@@ -146,21 +138,12 @@ export function VersionRow({
               <Download className="mr-2 h-4 w-4" /> Download original XML
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Reports (CSV)</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => void download("checks")}>
-              <FileWarning className="mr-2 h-4 w-4" /> Feed checks
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void download("quality")}>
-              <FileWarning className="mr-2 h-4 w-4" /> Quality issues per listing
-            </DropdownMenuItem>
-            {previous && (
-              <DropdownMenuItem onSelect={() => void download("changes")}>
-                <GitCompare className="mr-2 h-4 w-4" /> Changes since v{previous.number}
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Reports</DropdownMenuLabel>
+            {REPORTS.filter((r) => !r.needsPrevious || previous).map((r) => (
+              <DropdownMenuItem key={r.kind} onSelect={() => void download(r.kind)}>
+                <FileWarning className="mr-2 h-4 w-4" /> {r.label}
               </DropdownMenuItem>
-            )}
-            <DropdownMenuItem onSelect={() => void download("listings")}>
-              <Download className="mr-2 h-4 w-4" /> All listings
-            </DropdownMenuItem>
+            ))}
             {canEdit && (
               <>
                 <DropdownMenuItem onSelect={() => update.mutate({ source, version, pinned: !version.pinned })}>
