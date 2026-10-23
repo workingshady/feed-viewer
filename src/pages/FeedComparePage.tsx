@@ -73,9 +73,11 @@ function resolveVersion(source: SourceDTO, value: string | null): VersionDTO | n
 }
 
 export default function FeedComparePage() {
-  const { sources, isLoading } = useAppData();
+  const { sources, isLoading, selectedSource } = useAppData();
   const [params, setParams] = useSearchParams();
-  const sourceId = params.get("source");
+  // Default to the header's source, else the first source that has something to compare.
+  const sourceId =
+    params.get("source") ?? selectedSource?.id ?? sources.find((s) => s.versions.length > 1)?.id ?? sources[0]?.id ?? null;
   const source = sources.find((s) => s.id === sourceId) ?? null;
 
   const live = source ? liveVersionOf(source) : null;
@@ -90,6 +92,7 @@ export default function FeedComparePage() {
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
+        if (!next.has("source") && sourceId) next.set("source", sourceId);
         next.set(key, value);
         return next;
       },

@@ -50,6 +50,9 @@ import type { Listing } from "@/lib/types";
 import { computeListingAnalytics, formatAnalyticsMoney, type ListingAnalytics } from "@/lib/listingAnalytics";
 import { RECHARTS_BAR_CURSOR, RECHARTS_LINE_CURSOR, RECHARTS_TOOLTIP_PROPS } from "@/lib/chartTheme";
 import { cn } from "@/lib/utils";
+import { Columns, SERIES } from "@/components/charts/ChartKit";
+import { priceBands } from "@/lib/sourceInsights";
+import { computeFilteredPriceStats } from "@/lib/listingsFilteredStats";
 
 /** Bar / histogram hover band */
 const CHART_TOOLTIP_BAR = { ...RECHARTS_TOOLTIP_PROPS, cursor: RECHARTS_BAR_CURSOR as unknown as SVGProps<SVGElement> };
@@ -58,16 +61,9 @@ const CHART_TOOLTIP_LINE = { ...RECHARTS_TOOLTIP_PROPS, cursor: RECHARTS_LINE_CU
 /** Pie — no rectangular cursor overlay */
 const CHART_TOOLTIP_PIE = { ...RECHARTS_TOOLTIP_PROPS, cursor: false as const };
 
-const CHART_COLORS = [
-  "hsl(var(--primary))",
-  "hsl(var(--secondary))",
-  "hsl(var(--sb-slate))",
-  "hsl(var(--sb-amber))",
-  "hsl(var(--success))",
-  "hsl(var(--sb-rose))",
-  "hsl(var(--sb-sand))",
-  "hsl(var(--warning))",
-];
+const CHART_COLORS = SERIES;
+/** Legend labels stay in text ink; the swatch carries the series colour. */
+const legendText = (v: string) => <span className="text-xs text-muted-foreground">{v}</span>;
 
 type Props = {
   listings: Listing[];
@@ -170,12 +166,7 @@ export default function ListingAnalyticsDashboard({
     return rows;
   }, [a.purpose]);
 
-  const saleRentAvg = useMemo(() => {
-    return [
-      { name: "Sale (avg)", value: a.avgPriceByPurpose.sale ?? 0, has: a.avgPriceByPurpose.sale != null },
-      { name: "Rent (avg)", value: a.avgPriceByPurpose.rent ?? 0, has: a.avgPriceByPurpose.rent != null },
-    ].filter((x) => x.has);
-  }, [a.avgPriceByPurpose]);
+  const priceStats = useMemo(() => computeFilteredPriceStats(listings), [listings]);
 
   const currencyPie = useMemo(() => a.currencyMix.filter((c) => c.count > 0).map((c) => ({ name: c.name, value: c.count })), [a.currencyMix]);
 
@@ -255,7 +246,7 @@ export default function ListingAnalyticsDashboard({
                           <RechartsTooltip {...CHART_TOOLTIP_PIE}
                             formatter={(v: number) => [v, "Listings"]}
                           />
-                          <Legend />
+                          <Legend formatter={legendText} />
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
@@ -263,75 +254,45 @@ export default function ListingAnalyticsDashboard({
                 </ChartShell>
 
                 <ChartShell
-                  title="Average price by purpose"
-                  description="Mean asking price for sale listings vs mean rent for rentals (same currency as feed)."
+                  title="Median price by purpose"
+                  description="Sale prices and yearly rents are summarised separately; they are never comparable as one number."
                   icon={Coins}
-                  footnote="Only listings with a positive numeric price are averaged. If your feed mixes currencies, interpret next to the currency chart — do not compare AED averages to EUR averages as one number."
+                  footnote="Only listings with a positive price count. Rents quoted monthly or weekly are converted to a yearly amount."
                 >
-                  {saleRentAvg.length === 0 ? (
-                    <EmptyChart message="No priced listings to compare." />
-                  ) : (
-                    <div className="h-64 w-full min-w-0">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={saleRentAvg} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" vertical={false} />
-                          <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatAnalyticsMoney(v)} width={56} />
-                          <RechartsTooltip {...CHART_TOOLTIP_BAR}
-                            formatter={(v: number) => [formatAnalyticsMoney(v), "Average"]}
-                          />
-                          <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                            {saleRentAvg.map((_, i) => (
-                              <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
+                  <div className="grid h-64 grid-cols-2 content-center gap-4">
+                    {(
+                      [
+                        ["For sale", priceStats.sale],
+                        ["Rent per year", priceStats.rent],
+                      ] as const
+                    ).map(([label, st]) => (
+                      <div key={label} className="space-y-1 rounded-xl border p-4">
+                        <div className="text-xs text-muted-foreground">{label}</div>
+                        <div className="font-mono text-2xl font-semibold tabular-nums">{st ? formatAnalyticsMoney(st.median) : "—"}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {st
+                            ? `${st.count.toLocaleString()} priced · ${formatAnalyticsMoney(st.min)}–${formatAnalyticsMoney(st.max)}`
+                            : "No priced listings"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </ChartShell>
               </div>
 
               <ChartShell
                 title="Price distribution"
-                description="Asking prices on a log scale, so rents and multi-million sales both show their shape."
+                description="Listings per price band, with sales and yearly rents on their own scales."
                 icon={BarChart3}
-                footnote="Each band is a constant multiple of the one before it. Two humps usually mean rentals and sales mixed together — switch Sources scope or use the Market card on Sources to split them."
               >
-                {a.priceHistogram.length === 0 ? (
-                  <EmptyChart message="No numeric prices in this set." />
-                ) : (
-                  <div className="h-72 w-full min-w-0">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={a.priceHistogram} margin={{ top: 8, right: 12, left: 4, bottom: 24 }}>
-                        <defs>
-                          <linearGradient id="priceHistFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.35} />
-                            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
-                        <XAxis dataKey="label" tick={{ fontSize: 9 }} interval={0} angle={-22} textAnchor="end" height={56} />
-                        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={36} />
-                        <RechartsTooltip {...CHART_TOOLTIP_LINE}
-                          formatter={(v: number) => [v, "Listings"]}
-                          labelFormatter={(_, p) => {
-                            const row = p?.[0]?.payload as ListingAnalytics["priceHistogram"][0] | undefined;
-                            return row ? `Range ${formatAnalyticsMoney(row.min)} – ${formatAnalyticsMoney(row.max)}` : "";
-                          }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="count"
-                          name="Listings"
-                          stroke="hsl(var(--primary))"
-                          fill="url(#priceHistFill)"
-                          strokeWidth={2}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
+                <div className="grid gap-6 md:grid-cols-2">
+                  {(["sale", "rent"] as const).map((p) => (
+                    <section key={p} aria-label={p === "sale" ? "Sale price bands" : "Rent bands"}>
+                      <h4 className="mb-2 text-xs font-semibold">{p === "sale" ? "Sale price (AED)" : "Rent per year (AED)"}</h4>
+                      <Columns data={priceBands(listings, p)} xKey="label" series={[{ key: "count", label: "Listings", color: SERIES[0] }]} />
+                    </section>
+                  ))}
+                </div>
               </ChartShell>
 
               {currencyPie.length > 1 ? (
@@ -385,7 +346,7 @@ export default function ListingAnalyticsDashboard({
                               name === "avgPrice" ? [formatAnalyticsMoney(v), "Avg price"] : [v, "Count"]
                             }
                           />
-                          <Legend />
+                          <Legend formatter={legendText} />
                           <Bar yAxisId="right" dataKey="count" name="Count" fill="hsl(var(--muted))" radius={[4, 4, 0, 0]} opacity={0.85} />
                           <Line
                             yAxisId="left"
@@ -452,7 +413,7 @@ export default function ListingAnalyticsDashboard({
                               opacity={0.55}
                             />
                           ) : null}
-                          <Legend />
+                          <Legend formatter={legendText} />
                         </ScatterChart>
                       </ResponsiveContainer>
                     </div>
@@ -1028,14 +989,14 @@ function KpiRow({ analytics: a }: { analytics: ListingAnalytics }) {
         hint={`${a.missingPriceCount} without numeric price`}
       />
       <Kpi
-        label="Median price"
-        value={a.price ? formatAnalyticsMoney(a.price.median) : "—"}
-        hint="Middle of priced listings"
+        label="Price on application"
+        value={a.priceOnApplicationCount.toLocaleString()}
+        hint="Listed without a price"
       />
       <Kpi
-        label="Mean price"
-        value={a.price ? formatAnalyticsMoney(a.price.mean) : "—"}
-        hint="Average of priced listings"
+        label="Median sale price per area"
+        value={a.pricePerArea ? formatAnalyticsMoney(a.pricePerArea.median) : "—"}
+        hint={a.pricePerArea ? `Sale listings, ${a.pricePerArea.label}` : "Needs price and area"}
       />
       <Kpi
         label="Sale / rent"

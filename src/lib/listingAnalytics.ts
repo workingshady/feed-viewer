@@ -22,7 +22,6 @@ export type ListingAnalytics = {
   currencyMix: NamedCount[];
   price: PriceStats | null;
   purpose: { sale: number; rent: number; unknown: number };
-  avgPriceByPurpose: { sale: number | null; rent: number | null };
   propertyTypes: NamedCount[];
   communities: NamedCount[];
   cities: NamedCount[];
@@ -40,7 +39,6 @@ export type ListingAnalytics = {
   completionStatus: NamedCount[];
   furnished: NamedCount[];
   parking: NamedCount[];
-  priceHistogram: HistogramBin[];
   avgPriceByBeds: { beds: string; avgPrice: number; count: number }[];
   scatterPriceArea: { price: number; area: number; purpose: Listing["purpose"] }[];
   agentsByVolume: NamedCount[];
@@ -132,10 +130,6 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
   let sale = 0;
   let rent = 0;
   let unknownPurpose = 0;
-  let sumSale = 0;
-  let salePriced = 0;
-  let sumRent = 0;
-  let rentPriced = 0;
 
   const areas: number[] = [];
   const areaUnits = new Map<string, number>();
@@ -158,13 +152,6 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
       if ((l.priceOnApplication || "").toLowerCase() === "yes") poa++;
     } else {
       prices.push(p);
-      if (l.purpose === "sale") {
-        sumSale += p;
-        salePriced++;
-      } else if (l.purpose === "rent") {
-        sumRent += p;
-        rentPriced++;
-      }
     }
 
     const a = safeNum(l.area);
@@ -172,7 +159,8 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
       areas.push(a);
       const u = (l.areaUnit || "sqft").trim() || "sqft";
       areaUnits.set(u, (areaUnits.get(u) ?? 0) + 1);
-      if (hasPrice) ppa.push(p / a);
+      // Sale only: a rent per sqft is a different measure and would skew the median.
+      if (hasPrice && l.purpose === "sale") ppa.push(p / a);
     }
 
     const an = (l.agent?.name || "").trim();
@@ -216,36 +204,6 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
           label: `per ${topUnit}`,
         }
       : null;
-
-  // Histogram: up to 12 bins
-  let priceHistogram: HistogramBin[] = [];
-  if (sortedPrices.length > 0) {
-    const mn = sortedPrices[0];
-    const mx = sortedPrices[sortedPrices.length - 1];
-    const binCount = Math.min(12, Math.max(4, Math.ceil(Math.sqrt(sortedPrices.length))));
-    if (mn === mx) {
-      priceHistogram = [{ label: formatMoneyTick(mn), count: sortedPrices.length, min: mn, max: mx }];
-    } else {
-      // Property prices span several orders of magnitude (monthly rents to villas), so equal-width
-      // bins put almost everything in the first bar. Log-spaced bins show the real shape.
-      const logScale = mn > 0;
-      const edge = (i: number) =>
-        logScale ? mn * Math.pow(mx / mn, i / binCount) : mn + ((mx - mn) * i) / binCount;
-      priceHistogram = Array.from({ length: binCount }, (_, i) => {
-        const bmin = edge(i);
-        const bmax = i === binCount - 1 ? mx : edge(i + 1);
-        return { label: `${formatMoneyTick(bmin)}–${formatMoneyTick(bmax)}`, count: 0, min: bmin, max: bmax };
-      });
-      for (const p of sortedPrices) {
-        let i = logScale
-          ? Math.floor((Math.log(p / mn) / Math.log(mx / mn)) * binCount)
-          : Math.floor(((p - mn) / (mx - mn)) * binCount);
-        if (i >= binCount) i = binCount - 1;
-        if (i < 0) i = 0;
-        priceHistogram[i].count++;
-      }
-    }
-  }
 
   // Built-area histogram (same bin logic as price; labels use area-friendly ticks)
   let areaHistogram: HistogramBin[] = [];
@@ -365,10 +323,6 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
     ),
     price,
     purpose: { sale, rent, unknown: unknownPurpose },
-    avgPriceByPurpose: {
-      sale: salePriced ? sumSale / salePriced : null,
-      rent: rentPriced ? sumRent / rentPriced : null,
-    },
     propertyTypes: bucketMap(listings, (l) => (l.propertyType || "").trim() || "—", 10),
     communities: bucketMap(listings, (l) => (l.community || "").trim() || "—", 12),
     cities: bucketMap(listings, (l) => (l.city || "").trim() || "—", 10),
@@ -379,7 +333,6 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
     completionStatus: bucketMap(listings, (l) => (l.completionStatus || "").trim() || "—", 8),
     furnished: bucketMap(listings, (l) => (l.furnished || "").trim() || "—", 8),
     parking: bucketNumeric(listings, (l) => safeNum(l.parking), (n) => `${Math.round(n)}`),
-    priceHistogram,
     avgPriceByBeds,
     scatterPriceArea,
     agentsByVolume,
@@ -395,12 +348,6 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
 function formatAreaTick(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 10_000) return `${Math.round(n / 1000)}K`;
-  return Math.round(n).toLocaleString();
-}
-
-function formatMoneyTick(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${Math.round(n / 1000)}K`;
   return Math.round(n).toLocaleString();
 }
 
