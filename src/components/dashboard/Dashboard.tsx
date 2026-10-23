@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
@@ -11,16 +11,16 @@ import {
   Home as HomeIcon,
   KeyRound,
   Loader2,
-  Upload,
   Users,
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SourceComparisonTable } from "@/components/SourceComparisonTable";
-import { SourcePicker } from "@/components/SourcePicker";
 import { ListingCharts, SourceCharts } from "./DashboardCharts";
 import { ImportReadiness } from "./ImportReadiness";
+import { DashboardHero } from "./DashboardHero";
+import { UploadDialog } from "@/components/sources/UploadDialog";
 import { DiffBadges } from "@/components/sources/VersionRow";
 import { HealthDot, healthOf, healthReasons } from "@/components/sources/health";
 import { timeAgo } from "@/components/sources/format";
@@ -185,8 +185,9 @@ function NewestListings({ listings }: { listings: Listing[] }) {
 /** Signed-in home: what's live, what changed, what needs attention. */
 export function Dashboard() {
   const { user } = useAuth();
-  const { sources, listings, isLoading, selectedSource } = useAppData();
+  const { sources, listings, isLoading } = useAppData();
   const canEdit = hasRole(user?.role, "editor");
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const stats = useMemo(() => (listings.length ? computeVersionStats(listings) : null), [listings]);
   const uploads = useMemo(
@@ -203,25 +204,14 @@ export function Dashboard() {
     <div className="min-h-screen bg-background">
       <AppHeader />
       <main id="main-content" className="container space-y-6 py-8">
-        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
-          <div>
-            <h1 className="font-heading text-2xl font-extrabold">Welcome back, {user?.username}</h1>
-            <p className="text-sm text-muted-foreground">
-              {selectedSource ? `Showing ${selectedSource.name}.` : `Live listings across ${sources.length} source${sources.length === 1 ? "" : "s"}.`}{" "}
-              Everything here follows each source's live version.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <SourcePicker />
-            {canEdit && (
-              <Button asChild>
-                <Link to="/sources">
-                  <Upload className="mr-1.5 h-4 w-4" /> Upload feeds
-                </Link>
-              </Button>
-            )}
-          </div>
-        </div>
+        <DashboardHero
+          username={user?.username}
+          sources={sources}
+          listings={listings}
+          canEdit={canEdit}
+          onUpload={() => setUploadOpen(true)}
+        />
+        <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} sources={sources} />
 
         {isLoading && listings.length === 0 ? (
           <p className="flex items-center justify-center gap-2 py-24 text-muted-foreground">

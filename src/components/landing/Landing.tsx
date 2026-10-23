@@ -103,6 +103,58 @@ function ProductPreview() {
   );
 }
 
+/** Two small cards layered over the hero preview: the import forecast and a live-inventory sparkline. */
+function FloatingCards() {
+  const bars = [42, 55, 48, 63, 58, 72, 69, 84];
+  return (
+    <>
+      <div
+        aria-hidden
+        className="absolute -bottom-16 left-0 hidden w-56 rounded-xl border border-white/10 bg-[#141716]/95 p-3 shadow-2xl backdrop-blur sm:block lg:-left-10"
+      >
+        <div className="flex items-baseline justify-between text-[11px] text-white/60">
+          <span>Expected on Ziba</span>
+          <span className="font-mono text-white">3,089 · 98%</span>
+        </div>
+        <div className="mt-2 h-1.5 rounded-full bg-white/10">
+          <div className="h-1.5 w-[98%] rounded-full bg-[#7FD8A9]" />
+        </div>
+        <p className="mt-2 text-[10px] text-white/45">Held back: price on application 52</p>
+      </div>
+      <div
+        aria-hidden
+        className="absolute -top-20 right-2 hidden w-44 rounded-xl border border-white/10 bg-[#141716]/95 p-3 shadow-2xl backdrop-blur sm:block lg:-right-6"
+      >
+        <div className="text-[11px] text-white/60">Live listings</div>
+        <div className="font-mono text-lg font-semibold">4,975</div>
+        <div className="mt-1 flex h-8 items-end gap-1">
+          {bars.map((h, i) => (
+            <span key={i} className="flex-1 rounded-t-[3px] bg-[#7FD8A9]/80" style={{ height: `${h}%` }} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** Real product facts, not customer claims. */
+const PROOF = [
+  { value: "25+", label: "feed checks per upload" },
+  { value: "30%", label: "drop blocks a version from going live" },
+  { value: "1 click", label: "to apply or roll back a version" },
+  { value: "CSV · JSON", label: "for every chart, report and agent list" },
+];
+
+/** Problems the checks flag before a feed is imported (taken from real import QA). */
+const CATCHES = [
+  { title: "Image links that expire", text: "Pre-signed storage URLs work during the crawl and fail an hour later. Flagged as an error before import." },
+  { title: "Listings that won't publish", text: "Price-on-application and photo-less listings are counted up front, so the live count holds no surprises." },
+  { title: "Agents merged into one", text: "Several agents sharing one inbox become a single profile on import; you see how many before it happens." },
+  { title: "Duplicate or missing licences", text: "Broker numbers missing, non-numeric, or reused across different agents." },
+  { title: "Feeds too small or stale", text: "Under 100 listings, or not updated in six months: usually rejected at onboarding." },
+  { title: "Swapped coordinates and odd prices", text: "Map points outside the market, monthly rents filed as yearly, sizes that can't be right." },
+];
+
 export function Landing() {
   const signupOpen = useSignupStatus().data?.open ?? false;
 
@@ -110,7 +162,7 @@ export function Landing() {
     <div className="flex flex-col gap-3 sm:flex-row">
       <Button asChild size="lg" className="h-12 rounded-full bg-[#7FD8A9] px-7 font-semibold text-[#0b1f16] hover:bg-[#7FD8A9]/90">
         <Link to="/login">
-          Sign in <ArrowRight className="ml-1.5 h-4 w-4" />
+          Sign in to your workspace <ArrowRight className="ml-1.5 h-4 w-4" />
         </Link>
       </Button>
       {signupOpen && (
@@ -131,6 +183,10 @@ export function Landing() {
             aria-hidden
             className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_70%_20%,rgba(29,71,52,0.55),transparent_70%)]"
           />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(70%_60%_at_60%_30%,black,transparent)]"
+          />
           <div className="container relative grid items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
             <div className="space-y-6">
               <span className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1 text-xs text-white/70">
@@ -148,10 +204,23 @@ export function Landing() {
               {ctas}
               <p className="text-sm text-white/45">Private workspace. Accounts are created by an administrator.</p>
             </div>
-            <div className="flex justify-center lg:justify-end">
+            <div className="relative flex justify-center lg:justify-end">
               <ProductPreview />
+              <FloatingCards />
             </div>
           </div>
+        </section>
+
+        {/* Proof strip */}
+        <section aria-label="At a glance" className="border-t border-white/10 bg-white/[0.02]">
+          <dl className="container grid grid-cols-2 gap-6 py-8 md:grid-cols-4">
+            {PROOF.map((p) => (
+              <div key={p.label} className="space-y-1">
+                <dt className="font-heading text-2xl font-extrabold text-[#7FD8A9] sm:text-3xl">{p.value}</dt>
+                <dd className="text-sm text-white/60">{p.label}</dd>
+              </div>
+            ))}
+          </dl>
         </section>
 
         {/* How it works */}
@@ -219,6 +288,27 @@ export function Landing() {
                   </div>
                   <h3 className="font-semibold">{d.title}</h3>
                   <p className="text-sm leading-relaxed text-white/65">{d.text}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* What it catches */}
+        <section aria-labelledby="catches-heading" className="border-t border-white/10 py-20">
+          <div className="container space-y-10">
+            <div className="max-w-2xl space-y-3">
+              <h2 id="catches-heading" className="font-heading text-3xl font-bold tracking-tight">
+                Catch it before the import does
+              </h2>
+              <p className="text-white/65">The problems that usually surface days later in QA, flagged the moment a feed is uploaded.</p>
+            </div>
+            <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {CATCHES.map((c) => (
+                <li key={c.title} className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-transparent p-5">
+                  <ShieldCheck className="mb-3 h-5 w-5 text-[#7FD8A9]" aria-hidden />
+                  <h3 className="mb-1.5 font-semibold">{c.title}</h3>
+                  <p className="text-sm leading-relaxed text-white/65">{c.text}</p>
                 </li>
               ))}
             </ul>
