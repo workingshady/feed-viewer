@@ -1,12 +1,15 @@
 import { Link } from "react-router-dom";
 import {
   ArrowRight,
+  BarChart3,
   Check,
+  Download,
   FileUp,
   GitCompare,
   History,
   LayoutGrid,
   Map,
+  Share2,
   ShieldCheck,
   Sparkles,
   Undo2,
@@ -30,9 +33,18 @@ const FEATURES = [
   { icon: GitCompare, title: "Compare any two versions", text: "Field-by-field changes for every listing that moved, priced up or disappeared." },
   { icon: Map, title: "Explore the live data", text: "Listings grid, map, agencies, agents, duplicates across agencies and field-level quality." },
   { icon: LayoutGrid, title: "Field mapping", text: "Map unusual XML layouts to listing fields per agency, then re-parse the live file with one click." },
+  { icon: BarChart3, title: "Dashboards", text: "Workspace, agent and admin dashboards: inventory over time, price and bedroom mix, quality bands, workload per agent." },
+  { icon: Download, title: "Reports & exports", text: "Every chart doubles as a table and a CSV. Per-version reports cover feed checks, changes and agents as JSON." },
+  { icon: Share2, title: "Read-only share links", text: "Share one listing or a whole source with people who have no account. Links expire and can be revoked." },
 ];
 
 /** Static product preview: the Sources page version timeline, drawn with real UI tokens. */
+const DASHBOARDS = [
+  { title: "Workspace", text: "Listings per version, recent changes, live inventory by source, market and quality mix.", bars: [38, 62, 54, 80, 71, 92] },
+  { title: "Agents", text: "Top agents by sale and rent, workload spread, how concentrated each agency is.", bars: [95, 52, 34, 22, 15, 9] },
+  { title: "Admin", text: "Daily activity, sign-ins, storage per source, users by role and system health.", bars: [12, 30, 18, 44, 26, 58] },
+];
+
 function ProductPreview() {
   const rows = [
     { v: 3, live: true, file: "white-and-co-oct.xml", count: "3,141", diff: ["+42", "−18", "~96"], score: 86 },
@@ -180,6 +192,33 @@ export function Landing() {
                   <f.icon className="h-6 w-6 text-[#7FD8A9]" aria-hidden />
                   <h3 className="font-semibold">{f.title}</h3>
                   <p className="text-sm leading-relaxed text-white/65">{f.text}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* Dashboards */}
+        <section aria-labelledby="dash-heading" className="border-t border-white/10 py-20">
+          <div className="container space-y-10">
+            <div className="max-w-2xl space-y-3">
+              <h2 id="dash-heading" className="font-heading text-3xl font-bold tracking-tight">
+                A dashboard for every question
+              </h2>
+              <p className="text-white/65">
+                Charts follow the live version of every source, filter by sale or rent, and switch to a table you can download.
+              </p>
+            </div>
+            <ul className="grid gap-4 md:grid-cols-3">
+              {DASHBOARDS.map((d) => (
+                <li key={d.title} className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+                  <div className="flex h-24 items-end gap-1.5" aria-hidden>
+                    {d.bars.map((h, i) => (
+                      <span key={i} className="flex-1 rounded-t-[4px] bg-[#7FD8A9]/70" style={{ height: `${h}%` }} />
+                    ))}
+                  </div>
+                  <h3 className="font-semibold">{d.title}</h3>
+                  <p className="text-sm leading-relaxed text-white/65">{d.text}</p>
                 </li>
               ))}
             </ul>
