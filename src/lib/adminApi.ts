@@ -41,3 +41,17 @@ export type AdminStatus = {
 };
 
 export const fetchAdminStatus = () => apiFetch<AdminStatus>("/api/admin/status");
+
+export type AdminActivityDay = {
+  day: string;
+  version: number;
+  source: number;
+  user: number;
+  share: number;
+  client: number;
+  signIns: number;
+  failedSignIns: number;
+};
+
+export const fetchAdminActivity = (days = 30) =>
+  apiFetch<{ days: AdminActivityDay[] }>(`/api/admin/activity?days=${days}`).then((r) => r.days);

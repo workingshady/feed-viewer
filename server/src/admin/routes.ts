@@ -72,3 +72,37 @@ adminRouter.get(
     res.json({ events, nextCursor: rows.length > q.limit ? events[events.length - 1].id : null });
   }),
 );
+
+/** Activity buckets used by the admin dashboard charts. */
+const ACTIVITY_GROUPS = ["version", "source", "user", "share", "client"] as const;
+
+adminRouter.get(
+  "/activity",
+  asyncHandler(async (req, res) => {
+    const { days } = z.object({ days: z.coerce.number().int().min(7).max(90).default(30) }).parse(req.query);
+    const since = new Date(Date.now() - days * 86_400_000);
+    const [events, logins] = await Promise.all([
+      prisma.$queryRaw<{ day: Date; grp: string; n: bigint }[]>`
+        SELECT date_trunc('day', "createdAt") AS day, split_part(action, '.', 1) AS grp, count(*) AS n
+        FROM "AuditEvent" WHERE "createdAt" >= ${since} GROUP BY 1, 2`,
+      prisma.$queryRaw<{ day: Date; ok: boolean; n: bigint }[]>`
+        SELECT date_trunc('day', "createdAt") AS day, ok, count(*) AS n
+        FROM "LoginAttempt" WHERE "createdAt" >= ${since} GROUP BY 1, 2`,
+    ]);
+    const empty = () => ({ ...Object.fromEntries(ACTIVITY_GROUPS.map((g) => [g, 0])), signIns: 0, failedSignIns: 0 });
+    const byDay = new Map<string, Record<string, number>>();
+    for (let i = days - 1; i >= 0; i--) {
+      byDay.set(new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10), empty());
+    }
+    for (const e of events) {
+      const row = byDay.get(e.day.toISOString().slice(0, 10));
+      const grp = (ACTIVITY_GROUPS as readonly string[]).includes(e.grp) ? e.grp : null;
+      if (row && grp) row[grp] += Number(e.n);
+    }
+    for (const l of logins) {
+      const row = byDay.get(l.day.toISOString().slice(0, 10));
+      if (row) row[l.ok ? "signIns" : "failedSignIns"] += Number(l.n);
+    }
+    res.json({ days: [...byDay.entries()].map(([day, counts]) => ({ day, ...counts })) });
+  }),
+);

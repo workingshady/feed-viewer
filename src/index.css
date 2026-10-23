@@ -177,6 +177,15 @@
     --chart-severity-warning: 32 85% 42%;
     --chart-severity-info: 153 42% 36%;
     --chart-neutral: 195 20% 42%;
+    /* Categorical series (validated CVD-safe order; light steps). Text never wears these. */
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
+    --series-6: #008300;
+    --series-7: #6250d6;
+    --series-8: #e34948;
 
     --chart-tooltip-surface: var(--popover);
     --chart-tooltip-border: var(--border);
@@ -268,6 +277,14 @@
     --chart-severity-warning: 38 88% 54%;
     --chart-severity-info: 153 40% 50%;
     --chart-neutral: 195 17% 52%;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
 
     --chart-tooltip-surface: var(--popover);
     --chart-tooltip-border: var(--border);

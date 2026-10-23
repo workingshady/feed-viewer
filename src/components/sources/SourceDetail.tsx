@@ -5,7 +5,7 @@ import { MarketCard } from "./MarketCard";
 import { VersionsTab } from "./VersionsTab";
 import { ChangesTab } from "./ChangesTab";
 import { IssuesTab } from "./IssuesTab";
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ChartCard, Lines, SERIES } from "@/components/charts/ChartKit";
 import { ExternalLink, RefreshCw, Settings2, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +16,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { liveVersionOf, type SourceDTO, type VersionDTO } from "@/lib/sourcesApi";
 import { QUALITY_CHECKS } from "@/lib/versionStats";
 import { formatPriceCompact } from "@/lib/displayPrice";
-import { RECHARTS_TOOLTIP_CONTENT, RECHARTS_TOOLTIP_ITEM, RECHARTS_TOOLTIP_LABEL } from "@/lib/chartTheme";
 import { useUpdateSource } from "@/hooks/useSources";
 import { BulkDeleteDialog, ReparseDialog, ReportsMenu } from "./BulkDialogs";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -138,25 +137,19 @@ function TrendCard({ source }: { source: SourceDTO }) {
     quality: v.stats?.score ?? null,
   }));
   if (data.length < 2) return null;
+  // Two measures on different scales: two charts, never a second y-axis.
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Trend across versions</CardTitle>
-      </CardHeader>
-      <CardContent className="h-44">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ left: -16, right: 4, top: 4, bottom: 0 }}>
-            <CartesianGrid stroke="hsl(var(--chart-grid))" strokeDasharray="3 3" />
-            <XAxis dataKey="v" tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }} />
-            <YAxis yAxisId="l" tick={{ fontSize: 11, fill: "hsl(var(--chart-axis))" }} />
-            <YAxis yAxisId="q" orientation="right" domain={[0, 100]} hide />
-            <Tooltip contentStyle={RECHARTS_TOOLTIP_CONTENT} labelStyle={RECHARTS_TOOLTIP_LABEL} itemStyle={RECHARTS_TOOLTIP_ITEM} />
-            <Line yAxisId="l" dataKey="listings" name="Listings" stroke="hsl(var(--chart-line))" strokeWidth={2} dot={{ r: 2 }} />
-            <Line yAxisId="q" dataKey="quality" name="Quality" stroke="hsl(var(--chart-severity-warning))" strokeWidth={2} dot={{ r: 2 }} connectNulls />
-          </LineChart>
-        </ResponsiveContainer>
-      </CardContent>
-    </Card>
+    <div className="grid gap-4 md:grid-cols-2">
+      <ChartCard title="Listings per version" table={{ columns: ["Version", "Listings"], rows: data.map((d) => [d.v, d.listings]) }}>
+        <Lines data={data} xKey="v" series={[{ key: "listings", label: "Listings", color: SERIES[0] }]} height={160} />
+      </ChartCard>
+      <ChartCard
+        title="Quality score per version"
+        table={{ columns: ["Version", "Quality"], rows: data.map((d) => [d.v, d.quality ?? ""]) }}
+      >
+        <Lines data={data} xKey="v" series={[{ key: "quality", label: "Quality", color: SERIES[0] }]} height={160} domain={[0, 100]} />
+      </ChartCard>
+    </div>
   );
 }
 

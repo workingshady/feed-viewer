@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SourceComparisonTable } from "@/components/SourceComparisonTable";
 import { SourcePicker } from "@/components/SourcePicker";
-import { MarketBreakdown } from "@/components/sources/MarketCard";
+import { ListingCharts, SourceCharts } from "./DashboardCharts";
 import { DiffBadges } from "@/components/sources/VersionRow";
 import { HealthDot, healthOf, healthReasons } from "@/components/sources/health";
 import { timeAgo } from "@/components/sources/format";
@@ -263,8 +263,9 @@ export function Dashboard() {
               <RecentUploads uploads={uploads} />
             </div>
 
+            <SourceCharts sources={sources} />
+            <ListingCharts listings={listings} />
             <SourceComparisonTable sources={sources} />
-            <MarketBreakdown listings={listings} title={selectedSource ? `Market · ${selectedSource.name}` : "Market · all sources"} />
             <NewestListings listings={listings} />
 
             <div className="flex flex-wrap gap-2 text-sm">
