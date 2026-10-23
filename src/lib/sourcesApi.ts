@@ -107,3 +107,10 @@ export const deleteVersion = (sourceId: string, versionId: string) =>
 
 export const discardUploadedBlobs = (urls: string[]) =>
   apiFetch<{ ok: true }>("/api/blob/discard", { method: "POST", ...jsonBody({ urls }) });
+
+/** Deletes every source, version and stored file. Admin only; `confirm` must be "DELETE ALL". */
+export const clearAllSources = () =>
+  apiFetch<{ ok: true; deletedSources: number; deletedVersions: number }>("/api/sources/clear-all", {
+    method: "POST",
+    ...jsonBody({ confirm: "DELETE ALL" }),
+  });

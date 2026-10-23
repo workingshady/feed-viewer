@@ -7,8 +7,8 @@ export interface BlobStore {
 
 export const vercelBlobStore: BlobStore = {
   async del(urls) {
-    if (urls.length === 0) return;
-    await del(urls);
+    // The Blob API caps URLs per request; batch so clearing a large workspace works.
+    for (let i = 0; i < urls.length; i += 500) await del(urls.slice(i, i + 500));
   },
 };
 

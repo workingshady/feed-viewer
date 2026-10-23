@@ -53,6 +53,8 @@ function describeEvent(e: AdminAuditEvent, sourceName: (id: unknown) => string |
       return `created source "${m.name ?? ""}"`;
     case "source.update":
       return `changed source settings (${Array.isArray(m.fields) ? m.fields.join(", ") : "settings"})`;
+    case "source.clear_all":
+      return `deleted all sources (${m.sources ?? 0} sources, ${m.versions ?? 0} versions)`;
     case "source.delete":
       return `deleted source "${m.name ?? ""}" with ${m.versions ?? 0} versions`;
     case "auth.register":

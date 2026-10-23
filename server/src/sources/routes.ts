@@ -121,6 +121,21 @@ export function sourcesRouter(blobStore: BlobStore) {
     }),
   );
 
+  // Wipes every source, version and stored file. Admin only, with a typed confirmation.
+  router.post(
+    "/clear-all",
+    requireRole("admin"),
+    asyncHandler(async (req: AuthedRequest, res) => {
+      z.object({ confirm: z.literal("DELETE ALL") }).parse(req.body);
+      const sources = await prisma.source.findMany({ include: { versions: true } });
+      const versions = sources.flatMap((s) => s.versions);
+      await blobStore.del(versions.flatMap(blobUrlsOf));
+      await prisma.source.deleteMany({ where: { id: { in: sources.map((s) => s.id) } } });
+      await recordAudit(req.user!.id, "source.clear_all", "source", null, { sources: sources.length, versions: versions.length });
+      res.json({ ok: true, deletedSources: sources.length, deletedVersions: versions.length });
+    }),
+  );
+
   router.delete(
     "/:id",
     editor,

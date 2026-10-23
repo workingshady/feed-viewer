@@ -120,7 +120,7 @@ export function UploadDialog({
         patch(row.key, {
           status: "ready",
           prepared,
-          target: fixedSource?.id ?? prepared.matched?.id ?? undefined,
+          target: fixedSource?.id ?? prepared.matched?.id ?? NEW,
           newName: prepared.result.agencyInfo?.name?.trim() || row.newName,
         });
       } catch (e) {
@@ -258,6 +258,15 @@ export function UploadDialog({
                     </div>
                     <FeedChecksSummary result={row.prepared.checks} />
                     {!fixedSource && (
+                      <p className="text-xs text-muted-foreground">
+                        {row.prepared.matched && row.target === row.prepared.matched.id
+                          ? `Detected: ${row.prepared.matched.name} (matched by ${row.prepared.matchedBy ?? "agency name"}). Change it below if that's wrong.`
+                          : row.target === NEW
+                            ? "No existing source matches this agency, so a new source will be created. Pick one below to add it there instead."
+                            : "Chosen manually."}
+                      </p>
+                    )}
+                    {!fixedSource && (
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <Select value={row.target ?? ""} onValueChange={(v) => patch(row.key, { target: v })}>
                           <SelectTrigger className="sm:w-64" aria-label={`Source for ${row.file.name}`}>
@@ -269,7 +278,7 @@ export function UploadDialog({
                                 {s.name}
                               </SelectItem>
                             ))}
-                            <SelectItem value={NEW}>New source…</SelectItem>
+                            <SelectItem value={NEW}>New source: {row.newName.trim() || "…"}</SelectItem>
                           </SelectContent>
                         </Select>
                         {row.target === NEW && (
@@ -283,7 +292,6 @@ export function UploadDialog({
                         )}
                       </div>
                     )}
-                    {!row.target && <p className="text-xs text-warning">No source matches this agency — choose one or create a new source.</p>}
                   </div>
                 )}
 

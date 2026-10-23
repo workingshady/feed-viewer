@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { SourceList, type HealthFilter } from "@/components/sources/SourceList";
 import { SourceDetail } from "@/components/sources/SourceDetail";
 import { UploadDialog } from "@/components/sources/UploadDialog";
+import { ClearAllButton } from "@/components/sources/ClearAllDialog";
 import { healthOf } from "@/components/sources/health";
 import { formatBytes } from "@/components/sources/format";
 import { useAppData } from "@/providers/useAppData";
@@ -58,6 +59,7 @@ export default function SourcesPage() {
   const { sources, isLoading } = useAppData();
   const { user } = useAuth();
   const canEdit = hasRole(user?.role, "editor");
+  const isAdmin = hasRole(user?.role, "admin");
   const [params, setParams] = useSearchParams();
   const [upload, setUpload] = useState<{ open: boolean; fixed: boolean }>({ open: false, fixed: false });
   const [healthFilter, setHealthFilter] = useState<HealthFilter>("all");
@@ -91,11 +93,14 @@ export default function SourcesPage() {
               Each agency feed and its uploaded versions. The live version of each source is what every page shows.
             </p>
           </div>
-          {canEdit && (
-            <Button onClick={() => setUpload({ open: true, fixed: false })}>
-              <Upload className="mr-1.5 h-4 w-4" /> Upload feeds
-            </Button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {isAdmin && sources.length > 0 && <ClearAllButton sources={sources} onCleared={() => select(null)} />}
+            {canEdit && (
+              <Button onClick={() => setUpload({ open: true, fixed: false })}>
+                <Upload className="mr-1.5 h-4 w-4" /> Upload feeds
+              </Button>
+            )}
+          </div>
         </div>
 
         {isLoading && sources.length === 0 ? (

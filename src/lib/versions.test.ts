@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { diffCounts, diffListings } from "@/lib/versionDiff";
 import { computeVersionStats, listingQuality } from "@/lib/versionStats";
-import { commitVersion, matchSource, type PreparedVersion } from "@/lib/uploadVersion";
+import { commitVersion, detectSource, matchSource, type PreparedVersion } from "@/lib/uploadVersion";
 import { checkFeed } from "@/lib/feedValidation";
 import type { SourceDTO } from "@/lib/sourcesApi";
 import type { Listing } from "@/lib/types";
@@ -45,6 +45,18 @@ describe("matchSource", () => {
     expect(matchSource(undefined, sources)).toBeNull();
     expect(matchSource("Unknown Agency", sources)).toBeNull();
   });
+
+  it("detects by website, legal-suffix-free name and file name", () => {
+    const withSite = [{ ...source("3", "Aston Premium Real Estate"), agencyInfo: { name: "", logo: "", email: "", phone: "", website: "https://www.astonpremium.ae/" } }, ...sources];
+    expect(detectSource("Different Name", withSite, { website: "astonpremium.ae" })?.by).toBe("website");
+    expect(detectSource("White & Co Real Estate L.L.C", sources)?.source.id).toBe("1");
+    expect(detectSource(undefined, sources, { fileName: "white_and_co.xml" })?.by).toBe("file name");
+  });
+
+  it("does not fuzzy-match when two sources share the same core name", () => {
+    const twins = [source("a", "Elite Properties"), source("b", "Elite Estates")];
+    expect(detectSource("Elite Real Estate LLC", twins)).toBeNull();
+  });
 });
 
 describe("commitVersion", () => {
@@ -56,6 +68,7 @@ describe("commitVersion", () => {
     stats: computeVersionStats([listing("a")]),
     checks: checkFeed([listing("a")]),
     matched: null,
+    matchedBy: null,
     diff: null,
     mapping: null,
     fingerprint: "",

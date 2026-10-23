@@ -188,4 +188,28 @@ describe("api", () => {
     await agent.delete(`/api/sources/${src.id}`).expect(200);
     expect((await agent.get("/api/sources")).body.sources).toEqual([]);
   });
+
+  it("clear-all: admin only, needs the typed phrase, removes every source and file", async () => {
+    const { agent } = await signUp("owner");
+    for (const name of ["A", "B"]) {
+      const src = (await agent.post("/api/sources").send({ name, agencyName: name })).body.source;
+      await agent.post(`/api/sources/${src.id}/versions`).send(versionBody(src.id, name === "A" ? 1 : 2, 10)).expect(201);
+    }
+    expect((await agent.post("/api/sources/clear-all").send({ confirm: "yes" })).status).toBe(400);
+    expect((await agent.get("/api/sources")).body.sources).toHaveLength(2);
+
+    // An editor (not admin) is refused.
+    env.ALLOW_SIGNUP = true;
+    await signUp("editor1");
+    const ed = (await agent.get("/api/admin/users")).body.users.find((u: { username: string }) => u.username === "editor1");
+    await agent.patch(`/api/admin/users/${ed.id}`).send({ role: "editor" }).expect(200);
+    const editor = request.agent(app);
+    await editor.post("/api/auth/login").send({ username: "editor1", password: "correct-horse" }).expect(200);
+    expect((await editor.post("/api/sources/clear-all").send({ confirm: "DELETE ALL" })).status).toBe(403);
+
+    const r = await agent.post("/api/sources/clear-all").send({ confirm: "DELETE ALL" }).expect(200);
+    expect(r.body).toEqual({ ok: true, deletedSources: 2, deletedVersions: 2 });
+    expect(deleted).toHaveLength(4);
+    expect((await agent.get("/api/sources")).body.sources).toEqual([]);
+  });
 });
