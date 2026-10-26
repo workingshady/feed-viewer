@@ -11,7 +11,8 @@ import type { Evidence } from "@/lib/propertyMatch";
 import { toCsv } from "@/lib/reports";
 import type { Listing } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { downloadText } from "@/components/sources/format";
+import { downloadText, timeAgo } from "@/components/sources/format";
+import { readCached, writeCached } from "@/lib/resultCache";
 import { useAppData } from "@/providers/DataProvider";
 import type { SamePropertyResponse, WireCluster } from "@/workers/sameProperty.worker";
 import { Building2, Download, GitCompare, HelpCircle, Layers, Loader2, RefreshCw, Search, ShieldCheck } from "lucide-react";
@@ -41,6 +42,9 @@ const TIER: Record<Tier, { label: string; hint: string; icon: typeof ShieldCheck
 };
 
 const PAGE = 24;
+
+/** What is stored per (live versions, model): indexes into the agency lists, not listings. */
+type CachedRun = { clusters: WireCluster[]; possible: WireCluster[]; compared: number; ms: number };
 
 function spreadOf(listings: Listing[]): number | null {
   const prices = listings.map((l) => l.price).filter((p) => p > 0);
@@ -74,31 +78,63 @@ export default function CrossAgencyDupesPage() {
   const { overrides, byKey, isLoading: decisionsLoading } = useMatchDecisions();
   const navigate = useNavigate();
   const [run, setRun] = useState(0);
-  const [state, setState] = useState<{ groups: Group[]; compared: number; ms: number } | { error: string } | null>(null);
+  const [state, setState] = useState<{ groups: Group[]; compared: number; ms: number; savedAt: number } | { error: string } | null>(null);
 
-  const names = useMemo(() => [...listingsByAgency.keys()], [listingsByAgency]);
+  const names = useMemo(() => [...listingsByAgency.keys()].sort((a, b) => a.localeCompare(b)), [listingsByAgency]);
   const totalListings = useMemo(() => [...listingsByAgency.values()].reduce((n, l) => n + l.length, 0), [listingsByAgency]);
   const logo = useMemo(() => new Map(sources.map((s) => [s.name, s.agencyInfo?.logo || undefined])), [sources]);
+  /**
+   * Everything the result depends on: each source's live version and the active model. While none
+   * of them change, the stored result is reused (also across reloads); verdicts are applied on top
+   * at display time, so recording one never recomputes.
+   */
+  const cacheKey = useMemo(
+    () =>
+      `${matchModelKey}|${sources
+        .filter((s) => listingsByAgency.has(s.name))
+        .map((s) => `${s.name}=${s.activeVersionId}`)
+        .sort()
+        .join(",")}`,
+    [sources, listingsByAgency, matchModelKey],
+  );
 
   useEffect(() => {
     if (names.length < 2 || decisionsLoading) return;
-    setState(null);
+    let cancelled = false;
+    let worker: Worker | null = null;
     const lists = names.map((n) => listingsByAgency.get(n) ?? []);
-    const worker = new Worker(new URL("../workers/sameProperty.worker.ts", import.meta.url), { type: "module" });
-    worker.onmessage = (e: MessageEvent<SamePropertyResponse>) => {
-      const d = e.data;
-      if ("error" in d) setState({ error: d.error });
-      else setState({ groups: [...toGroups(d.clusters, names, lists, false), ...toGroups(d.possible, names, lists, true)], compared: d.compared, ms: d.ms });
-      worker.terminate();
+    const show = (d: CachedRun, savedAt: number) =>
+      setState({ groups: [...toGroups(d.clusters, names, lists, false), ...toGroups(d.possible, names, lists, true)], compared: d.compared, ms: d.ms, savedAt });
+    (async () => {
+      if (run === 0) {
+        const hit = await readCached<CachedRun>("same-property", cacheKey);
+        if (cancelled) return;
+        if (hit) return show(hit.value, hit.savedAt);
+      }
+      setState(null);
+      worker = new Worker(new URL("../workers/sameProperty.worker.ts", import.meta.url), { type: "module" });
+      worker.onmessage = (e: MessageEvent<SamePropertyResponse>) => {
+        const d = e.data;
+        worker?.terminate();
+        if (cancelled) return;
+        if ("error" in d) return setState({ error: d.error });
+        const value: CachedRun = { clusters: d.clusters, possible: d.possible, compared: d.compared, ms: d.ms };
+        void writeCached("same-property", cacheKey, value);
+        show(value, Date.now());
+      };
+      worker.onerror = (e) => {
+        worker?.terminate();
+        if (!cancelled) setState({ error: e.message || "Matching failed" });
+      };
+      worker.postMessage({ groups: names.map((n, i) => ({ group: n, listings: lists[i] })), weights: getMatchWeights(), overrides });
+    })();
+    return () => {
+      cancelled = true;
+      worker?.terminate();
     };
-    worker.onerror = (e) => {
-      setState({ error: e.message || "Matching failed" });
-      worker.terminate();
-    };
-    worker.postMessage({ groups: names.map((n, i) => ({ group: n, listings: lists[i] })), weights: getMatchWeights(), overrides });
-    return () => worker.terminate();
-    // matchModelKey re-runs matching when a newly trained model becomes active.
-  }, [names, listingsByAgency, run, overrides, decisionsLoading, matchModelKey]);
+    // Verdicts (overrides) are deliberately not a dependency: they are applied at display time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey, run, decisionsLoading]);
 
   const [tier, setTier] = useState<Tier | "all">("all");
   const [agency, setAgency] = useState("all");
@@ -109,7 +145,14 @@ export default function CrossAgencyDupesPage() {
   const [showDismissed, setShowDismissed] = useState(false);
   const decisionOf = (g: Group) => byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict;
 
-  const groups = useMemo(() => (state && "groups" in state ? state.groups : []), [state]);
+  // A reviewer's "same" confirms a group immediately, without recomputing.
+  const groups = useMemo(
+    () =>
+      (state && "groups" in state ? state.groups : []).map((g) =>
+        g.tier === "possible" && byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict === "same" ? { ...g, tier: "permit" as const } : g,
+      ),
+    [state, byKey],
+  );
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     const out = groups.filter(
@@ -212,6 +255,11 @@ export default function CrossAgencyDupesPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            {state && "savedAt" in state && (
+              <span className="self-center text-xs text-muted-foreground" title="Reused until a feed version or the matching model changes">
+                Computed {timeAgo(new Date(state.savedAt).toISOString())}
+              </span>
+            )}
             <Button variant="outline" onClick={() => setRun((r) => r + 1)} disabled={!state}>
               <RefreshCw className="mr-1.5 h-4 w-4" /> Re-run
             </Button>
@@ -240,7 +288,7 @@ export default function CrossAgencyDupesPage() {
               {(["permit", "possible"] as Tier[]).map((t) => (
                 <Kpi key={t} label={TIER[t].label} value={insights.counts[t]} hint={TIER[t].hint} active={tier === t} onClick={() => setTier(tier === t ? "all" : t)} />
               ))}
-              <Kpi label="Pairs checked" value={state.compared} hint={`in ${(state.ms / 1000).toFixed(1)} s`} />
+              <Kpi label="Pairs checked" value={state.compared} hint={`in ${(state.ms / 1000).toFixed(1)} s, reused until a feed changes`} />
             </section>
 
             {insights.share.length > 0 && (
