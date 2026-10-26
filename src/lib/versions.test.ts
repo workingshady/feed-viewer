@@ -115,10 +115,13 @@ describe("diff engine", () => {
   });
 
   it("detects a re-posted listing under a new reference", () => {
-    const base = { purpose: "sale" as const, propertyType: "Apartment", community: "JBR", beds: 2, area: 1200, images: ["https://x/main.jpg"], title: "Sea view 2BR in JBR" };
+    const photos = ["a", "b", "c", "d"].map((x) => `https://cdn.x/p/${x}.jpg`);
+    const description = "Bright two bedroom apartment on a high floor with full sea view, upgraded kitchen, two parking spaces and direct beach access in JBR";
+    const base = { purpose: "sale" as const, propertyType: "Apartment", community: "JBR", beds: 2, baths: 3, area: 1234.5, images: photos, title: "Sea view 2BR in JBR", description };
     const d = diffListings([listing("OLD-1", { ...base, price: 2_000_000 })], [listing("NEW-9", { ...base, price: 1_950_000 })]);
-    expect(diffCounts(d)).toEqual({ added: 0, removed: 0, changed: 0 });
+    expect(d.added).toHaveLength(0);
+    expect(d.removed).toHaveLength(0);
     expect(d.relisted[0]).toMatchObject({ before: { reference: "OLD-1" }, after: { reference: "NEW-9" }, keys: ["reference", "price"] });
-    expect(d.relisted[0].signals).toContain("same main photo");
+    expect(d.relisted[0].signals.join(" ")).toMatch(/identical photos/);
   });
 });

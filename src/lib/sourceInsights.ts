@@ -53,13 +53,14 @@ export type PriceMove = { listing: Listing; before: number; after: number; pct: 
 
 /** Listings whose price changed between two versions, biggest moves first. */
 export function priceMoves(diff: VersionDiff): { up: PriceMove[]; down: PriceMove[]; medianPct: number | null } {
-  const moves: PriceMove[] = diff.changed
-    .filter((c) => c.keys.includes("price") && c.before.price > 0 && c.after.price > 0)
+  // Relisted properties count too: a re-post at a new price is still a price move.
+  const moves: PriceMove[] = [...diff.changed, ...diff.relisted]
+    .filter((c) => c.changes.price)
     .map((c) => ({
       listing: c.after,
-      before: c.before.price,
-      after: c.after.price,
-      pct: (c.after.price - c.before.price) / c.before.price,
+      before: c.changes.price!.before,
+      after: c.changes.price!.after,
+      pct: c.changes.price!.pct / 100,
     }));
   const sorted = [...moves].map((m) => m.pct).sort((a, b) => a - b);
   const mid = sorted.length >> 1;
@@ -73,6 +74,6 @@ export function priceMoves(diff: VersionDiff): { up: PriceMove[]; down: PriceMov
 /** How often each field changed across changed listings, most frequent first. */
 export function changedFieldCounts(diff: VersionDiff): Bucket[] {
   const map = new Map<string, number>();
-  for (const c of diff.changed) for (const k of c.keys) map.set(String(k), (map.get(String(k)) ?? 0) + 1);
+  for (const c of [...diff.changed, ...diff.relisted]) for (const k of c.keys) if (k !== "reference") map.set(String(k), (map.get(String(k)) ?? 0) + 1);
   return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([label, count]) => ({ label, count }));
 }

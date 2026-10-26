@@ -16,6 +16,8 @@ import { diffListings } from "@/lib/versionDiff";
 import { UI_FIELDS, type Listing } from "@/lib/types";
 import { BarList, listingHref } from "./BarList";
 import { DiffBadges } from "./VersionRow";
+import { ListingChangeRow } from "@/components/compare/ListingChangeRow";
+import { EvidenceList } from "@/components/compare/MatchEvidence";
 
 const FIELD_LABEL = Object.fromEntries(UI_FIELDS.map((f) => [f.key, f.label])) as Record<string, string>;
 const PAGE = 25;
@@ -222,6 +224,7 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
           <TabsTrigger value="removed">Removed {diff.removed.length}</TabsTrigger>
           <TabsTrigger value="changed">Changed {diff.changed.length}</TabsTrigger>
           {diff.relisted.length > 0 && <TabsTrigger value="relisted">Relisted {diff.relisted.length}</TabsTrigger>}
+          {diff.possibleRelists.length > 0 && <TabsTrigger value="review">To review {diff.possibleRelists.length}</TabsTrigger>}
         </TabsList>
         <TabsContent value="added">
           <ListingLinks sourceId={source.id} listings={diff.added} />
@@ -232,30 +235,66 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
         </TabsContent>
         <TabsContent value="relisted">
           <p className="mb-2 text-xs text-muted-foreground">
-            Same property under a new reference number — matched by photos, size, location, price and agent, so it isn't counted
-            as removed + added.
+            Same property under a new reference number, matched on the property itself (permit, photos, description, size, layout,
+            location), so it isn't counted as removed + added.
+          </p>
+          <ul className="space-y-2">
+            {diff.relisted.slice(0, 200).map((r) => (
+              <ListingChangeRow
+                key={r.after.reference}
+                before={r.before}
+                after={r.after}
+                changes={r.changes}
+                href={listingHref(source.id, r.after)}
+                header={
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <span className="font-mono text-muted-foreground line-through">{r.before.reference}</span>
+                      <span aria-hidden>→</span>
+                      <span className="font-mono font-semibold">{r.after.reference}</span>
+                    </div>
+                    <EvidenceList evidence={r.evidence} limit={4} compact />
+                  </div>
+                }
+              />
+            ))}
+          </ul>
+        </TabsContent>
+        <TabsContent value="review">
+          <p className="mb-2 text-xs text-muted-foreground">
+            Possibly the same property under a new reference, but not certain enough to merge. They stay counted as removed and added.
           </p>
           <ul className="divide-y divide-border rounded-lg border text-sm">
-            {diff.relisted.slice(0, 200).map((r) => (
-              <li key={r.after.reference} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-                <span className="font-mono text-xs text-muted-foreground">{r.before.reference}</span>
-                <span aria-hidden>→</span>
-                <Link to={listingHref(source.id, r.after)} className="font-mono text-xs hover:underline">
-                  {r.after.reference}
-                </Link>
-                <span className="min-w-0 flex-1 truncate">{r.after.title}</span>
-                <span className="text-xs text-muted-foreground">{r.signals.join(", ")}</span>
-                {r.keys.filter((k) => k !== "reference").length > 0 && (
-                  <span className="text-xs text-warning">
-                    also changed: {r.keys.filter((k) => k !== "reference").map((k) => FIELD_LABEL[k] ?? k).join(", ")}
-                  </span>
-                )}
+            {diff.possibleRelists.slice(0, 200).map((p, i) => (
+              <li key={i} className="space-y-1.5 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-mono text-muted-foreground">{p.before.reference}</span>
+                  <span aria-hidden>↔</span>
+                  <Link to={listingHref(source.id, p.after)} className="font-mono hover:underline">
+                    {p.after.reference}
+                  </Link>
+                  <span className="min-w-0 flex-1 truncate">{p.after.title}</span>
+                </div>
+                <EvidenceList evidence={p.evidence} limit={4} compact />
               </li>
             ))}
           </ul>
         </TabsContent>
         <TabsContent value="changed">
-          <ListingLinks sourceId={source.id} listings={diff.changed.map((c) => c.after)} />
+          {diff.changed.length === 0 ? (
+            <p className="py-4 text-sm text-muted-foreground">None.</p>
+          ) : (
+            <ul className="space-y-2">
+              {diff.changed.slice(0, 300).map((c) => (
+                <ListingChangeRow key={c.after.reference || c.after.id} before={c.before} after={c.after} changes={c.changes} href={listingHref(source.id, c.after)} />
+              ))}
+            </ul>
+          )}
+          {diff.completenessOnly.length > 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {diff.completenessOnly.length.toLocaleString()} more listings only had values filled in or dropped; see Compare versions → Data gaps.
+            </p>
+          )}
         </TabsContent>
       </Tabs>
     </div>

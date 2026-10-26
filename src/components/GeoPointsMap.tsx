@@ -262,7 +262,7 @@ export function GeoPointsMap({
                   onHoverListingPosChange?.(null);
                 },
                 mousemove: (e) => {
-                  const pt = (e as any)?.containerPoint as { x: number; y: number } | undefined;
+                  const pt = (e as { containerPoint?: { x: number; y: number } } | undefined)?.containerPoint;
                   if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) onHoverListingPosChange?.({ x: pt.x, y: pt.y });
                 },
                 click: () => onSelectListingId?.(l.id),

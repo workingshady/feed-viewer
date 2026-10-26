@@ -32,6 +32,10 @@ import {
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { COMPARED_KEYS, listingChangeSet } from "@/lib/listingChanges";
+import { SamePropertyPanel } from "@/components/compare/SamePropertyPanel";
+
+const COMPARED: ReadonlySet<keyof Listing> = new Set(COMPARED_KEYS);
 
 /** Labels for fields not listed in `UI_FIELDS`. */
 const EXTRA_FIELD_LABELS: Partial<Record<keyof Listing, string>> = {
@@ -331,6 +335,13 @@ const ComparePage = () => {
     [ids, listingById]
   );
 
+  /** Fields that differ in substance between the first listing and any other. */
+  const diffKeys = useMemo(() => {
+    const out = new Set<keyof Listing>();
+    for (const other of compared.slice(1)) for (const c of listingChangeSet(compared[0], other).changes) out.add(c.key);
+    return out;
+  }, [compared]);
+
   const firstSecondTextDiff = useMemo(() => {
     if (compared.length < 2) {
       return {
@@ -401,8 +412,7 @@ const ComparePage = () => {
           </div>
         </div>
 
-        <div className="mb-5 rounded-lg border border-border/60 bg-card/40 px-3 py-2">
-        </div>
+        <SamePropertyPanel listings={compared} />
 
         <Tabs
           value={primaryView}
@@ -511,7 +521,10 @@ const ComparePage = () => {
 
                     {keys.map((key) => {
                       const values = compared.map((l) => formatListingFieldValue(key, l));
-                      const same = allSame(values);
+                      // Content fields use the noise-tolerant comparison (formatting, photo order, pin jitter
+                      // and rounding are not differences); bookkeeping fields compare as text.
+                      const k = key === "longitude" ? "latitude" : key;
+                      const same = COMPARED.has(k) ? !diffKeys.has(k) : allSame(values);
 
                       return (
                         <tr

@@ -1,138 +1,129 @@
-import { importListingDiffKey, listingChangedKeysFull } from "@/lib/importAnalysis";
+import { listingChangeSet, type ListingChangeSet } from "@/lib/listingChanges";
+import { matchListingSets, type Evidence } from "@/lib/propertyMatch";
 import type { Listing } from "@/lib/types";
 
-export type ChangedListing = { before: Listing; after: Listing; keys: (keyof Listing)[] };
+export type ChangedListing = {
+  before: Listing;
+  after: Listing;
+  /** Fields that changed in substance (noise and filled/cleared values excluded). */
+  keys: (keyof Listing)[];
+  changes: ListingChangeSet;
+};
 
 /** Same property under a new reference number (often re-posted to look fresh). */
-export type RelistedListing = ChangedListing & { score: number; signals: string[] };
+export type RelistedListing = ChangedListing & { score: number; signals: string[]; evidence: Evidence[] };
+
+/** Plausibly the same property under a new reference, but not certain enough to merge. */
+export type PossibleRelist = { before: Listing; after: Listing; score: number; evidence: Evidence[] };
 
 export type VersionDiff = {
   added: Listing[];
   removed: Listing[];
+  /** Matched listings with at least one real change. */
   changed: ChangedListing[];
   /** Matched across a reference change; not counted as added or removed. */
   relisted: RelistedListing[];
+  /** Listed under added/removed, with a candidate counterpart worth a look. */
+  possibleRelists: PossibleRelist[];
+  /** Matched listings whose only differences are values filled in or dropped (data completeness). */
+  completenessOnly: ChangedListing[];
   unchangedCount: number;
-  /** Keys that appear more than once within `next` (last occurrence wins). */
+  /** References that appear more than once within `next` (last occurrence wins). */
   duplicates: string[];
 };
 
-/** References compared without case or surrounding/inner whitespace differences. */
-const matchKey = (l: Listing) => importListingDiffKey(l).replace(/\s+/g, "").toLowerCase();
+/** References compared without case, spaces, dashes or underscores ("BH-S-1 " = "bhs1"). */
+export const referenceKey = (l: Pick<Listing, "reference">) => (l.reference || "").toLowerCase().replace(/[\s_-]+/g, "");
 
-function byKey(listings: Listing[], dupes?: Set<string>): Map<string, Listing> {
+function byReference(listings: Listing[], dupes?: Set<string>) {
   const map = new Map<string, Listing>();
+  const noRef: Listing[] = [];
   for (const l of listings) {
-    const k = matchKey(l);
-    if (dupes && map.has(k)) dupes.add(importListingDiffKey(l));
-    map.set(k, l);
-  }
-  return map;
-}
-
-const words = (s: string) => new Set((s || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
-function jaccard(a: string, b: string): number {
-  const x = words(a);
-  const y = words(b);
-  if (!x.size || !y.size) return 0;
-  let inter = 0;
-  for (const w of x) if (y.has(w)) inter++;
-  return inter / (x.size + y.size - inter);
-}
-const near = (a: number, b: number, tolerance: number) => a > 0 && b > 0 && Math.abs(a - b) / Math.max(a, b) <= tolerance;
-const firstPhoto = (l: Listing) => (l.images?.[0] ?? "").replace(/[?#].*$/, "");
-const phoneDigits = (l: Listing) => (l.agent?.phone ?? "").replace(/\D+/g, "");
-
-/**
- * How likely `a` and `b` are the same property. Requires the same purpose, type and community,
- * then scores supporting evidence. 0 when they can't be the same.
- */
-export function relistScore(a: Listing, b: Listing): { score: number; signals: string[] } {
-  if (a.purpose !== b.purpose || a.propertyType !== b.propertyType) return { score: 0, signals: [] };
-  if ((a.community || "").trim().toLowerCase() !== (b.community || "").trim().toLowerCase()) return { score: 0, signals: [] };
-  if ((a.beds ?? -1) !== (b.beds ?? -1)) return { score: 0, signals: [] };
-  const signals: string[] = [];
-  let score = 0;
-  if (firstPhoto(a) && firstPhoto(a) === firstPhoto(b)) {
-    score += 3;
-    signals.push("same main photo");
-  }
-  if (near(a.area, b.area, 0.02)) {
-    score += 2;
-    signals.push("same size");
-  }
-  if (near(a.price, b.price, 0.1)) {
-    score += 1;
-    signals.push("similar price");
-  }
-  if (phoneDigits(a) && phoneDigits(a) === phoneDigits(b)) {
-    score += 1;
-    signals.push("same agent");
-  }
-  if (jaccard(a.title, b.title) >= 0.6) {
-    score += 1;
-    signals.push("similar title");
-  }
-  if (a.latitude != null && b.latitude != null && Math.abs(a.latitude - b.latitude) < 1e-4 && Math.abs((a.longitude ?? 0) - (b.longitude ?? 0)) < 1e-4) {
-    score += 1;
-    signals.push("same map point");
-  }
-  return { score, signals };
-}
-
-/** Pairs need the photo or size match plus at least one more signal. */
-const RELIST_MIN_SCORE = 4;
-
-/** Listing-level diff between two versions of the same source, matched by id/reference. */
-export function diffListings(prev: Listing[], next: Listing[], opts: { detectRelists?: boolean } = {}): VersionDiff {
-  const dupes = new Set<string>();
-  const before = byKey(prev);
-  const after = byKey(next, dupes);
-  const diff: VersionDiff = { added: [], removed: [], changed: [], relisted: [], unchangedCount: 0, duplicates: [...dupes] };
-  for (const [k, l] of after) {
-    const old = before.get(k);
-    if (!old) {
-      diff.added.push(l);
+    const k = referenceKey(l);
+    if (!k) {
+      noRef.push(l);
       continue;
     }
-    const keys = listingChangedKeysFull(old, l);
-    if (keys.length) diff.changed.push({ before: old, after: l, keys });
+    if (dupes && map.has(k)) dupes.add(l.reference);
+    map.set(k, l);
+  }
+  return { map, noRef };
+}
+
+const keysOf = (c: ListingChangeSet) => [...new Set(c.material.map((m) => m.key))];
+
+/**
+ * Listing-level diff between two versions of the same source.
+ *
+ * 1. Listings with the same reference are the same listing; their fields are compared with
+ *    `listingChangeSet`, which ignores formatting noise and separates filled/cleared values from
+ *    real changes.
+ * 2. Listings left over on either side (new reference, or no reference at all) are matched by
+ *    property evidence — permit, photos, description, size, layout, location — so a re-posted
+ *    property counts as relisted rather than one removal plus one addition.
+ */
+export function diffListings(prev: Listing[], next: Listing[]): VersionDiff {
+  const dupes = new Set<string>();
+  const before = byReference(prev);
+  const after = byReference(next, dupes);
+  const diff: VersionDiff = {
+    added: [],
+    removed: [],
+    changed: [],
+    relisted: [],
+    possibleRelists: [],
+    completenessOnly: [],
+    unchangedCount: 0,
+    duplicates: [...dupes],
+  };
+
+  const leftoverNext: Listing[] = [...after.noRef];
+  for (const [k, l] of after.map) {
+    const old = before.map.get(k);
+    if (!old) {
+      leftoverNext.push(l);
+      continue;
+    }
+    const changes = listingChangeSet(old, l);
+    const entry = { before: old, after: l, keys: keysOf(changes), changes };
+    if (changes.material.length) diff.changed.push(entry);
+    else if (changes.completeness.length) {
+      diff.completenessOnly.push(entry);
+      diff.unchangedCount++;
+    } else diff.unchangedCount++;
+  }
+  const leftoverPrev: Listing[] = [...before.noRef];
+  for (const [k, l] of before.map) if (!after.map.has(k)) leftoverPrev.push(l);
+
+  const { matches, possible } = matchListingSets(leftoverPrev, leftoverNext, "versions");
+  const matchedPrev = new Set<Listing>();
+  const matchedNext = new Set<Listing>();
+  for (const m of matches) {
+    matchedPrev.add(m.a);
+    matchedNext.add(m.b);
+    const changes = listingChangeSet(m.a, m.b);
+    const keys = keysOf(changes);
+    if (referenceKey(m.a) !== referenceKey(m.b)) keys.unshift("reference");
+    const entry = { before: m.a, after: m.b, keys, changes };
+    if (referenceKey(m.a) && referenceKey(m.b)) {
+      diff.relisted.push({ ...entry, score: m.score, evidence: m.evidence, signals: m.evidence.filter((e) => e.weight > 0).map((e) => e.label) });
+    } else if (changes.material.length) diff.changed.push(entry);
     else diff.unchangedCount++;
   }
-  for (const [k, l] of before) if (!after.has(k)) diff.removed.push(l);
-
-  // Second pass: pair removed and added listings that look like the same property.
-  if (opts.detectRelists !== false && diff.added.length && diff.removed.length && diff.added.length * diff.removed.length <= 4_000_000) {
-    const candidates: { r: number; a: number; score: number; signals: string[] }[] = [];
-    // Bucket by purpose/type/community/beds so the comparison stays near-linear.
-    const bucket = (l: Listing) => `${l.purpose}|${l.propertyType}|${(l.community || "").trim().toLowerCase()}|${l.beds ?? -1}`;
-    const removedBy = new Map<string, number[]>();
-    diff.removed.forEach((l, i) => removedBy.set(bucket(l), [...(removedBy.get(bucket(l)) ?? []), i]));
-    diff.added.forEach((l, a) => {
-      for (const r of removedBy.get(bucket(l)) ?? []) {
-        const { score, signals } = relistScore(diff.removed[r], l);
-        if (score >= RELIST_MIN_SCORE) candidates.push({ r, a, score, signals });
-      }
-    });
-    candidates.sort((x, y) => y.score - x.score);
-    const usedR = new Set<number>();
-    const usedA = new Set<number>();
-    for (const c of candidates) {
-      if (usedR.has(c.r) || usedA.has(c.a)) continue;
-      usedR.add(c.r);
-      usedA.add(c.a);
-      const b = diff.removed[c.r];
-      const a = diff.added[c.a];
-      diff.relisted.push({ before: b, after: a, keys: listingChangedKeysFull(b, a), score: c.score, signals: c.signals });
-    }
-    diff.removed = diff.removed.filter((_, i) => !usedR.has(i));
-    diff.added = diff.added.filter((_, i) => !usedA.has(i));
-  }
+  diff.added = leftoverNext.filter((l) => !matchedNext.has(l));
+  diff.removed = leftoverPrev.filter((l) => !matchedPrev.has(l));
+  diff.possibleRelists = possible.map((p) => ({ before: p.a, after: p.b, score: p.score, evidence: p.evidence }));
   return diff;
 }
 
+/** Headline counts stored on a version. Relisted listings are the same property, so neither added nor removed. */
 export const diffCounts = (d: VersionDiff) => ({
   added: d.added.length,
   removed: d.removed.length,
-  changed: d.changed.length,
+  changed: d.changed.length + d.relisted.length,
 });
+
+/** Listings whose price really moved (same listing or relisted). */
+export function priceChanges(d: VersionDiff) {
+  return [...d.changed, ...d.relisted].filter((c) => c.changes.price);
+}

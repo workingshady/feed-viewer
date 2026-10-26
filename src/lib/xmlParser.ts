@@ -15,6 +15,7 @@ function sanitizeXml(xml: string): { xml: string; removed: number } {
   // XML 1.0 forbids most ASCII control chars (except tab, LF, CR).
   // Some real-world feeds contain NULs or other control characters; DOMParser will hard-fail on them.
   const before = xml.length;
+  // eslint-disable-next-line no-control-regex -- stripping control characters is the point
   const cleaned = xml.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
   return { xml: cleaned, removed: before - cleaned.length };
 }

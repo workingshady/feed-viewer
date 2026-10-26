@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:server": "vitest run --config server/vitest.config.ts",
     "test:e2e": "playwright test",
+    "bench": "vitest run --config bench/vitest.config.ts",
     "db:up": "docker compose up -d postgres",
     "db:migrate": "prisma migrate dev",
     "create-admin": "tsx --env-file=.env server/scripts/create-admin.ts"

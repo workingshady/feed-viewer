@@ -32,18 +32,21 @@ const FIELD_LABEL = Object.fromEntries(UI_FIELDS.map((f) => [f.key, f.label])) a
 /** Every change between two versions: added, removed, and each changed field with old and new value. */
 export function changesCsv(diff: VersionDiff): string {
   const out: unknown[][] = [];
-  for (const l of diff.added) out.push(["added", l.reference, l.title, "", "", l.price]);
-  for (const l of diff.removed) out.push(["removed", l.reference, l.title, "", l.price, ""]);
+  for (const l of diff.added) out.push(["added", l.reference, l.title, "", "", "", l.price]);
+  for (const l of diff.removed) out.push(["removed", l.reference, l.title, "", "", l.price, ""]);
   for (const r of diff.relisted) {
-    out.push(["relisted", r.after.reference, r.after.title, "Reference", r.before.reference, r.after.reference]);
-    for (const k of r.keys) if (k !== "reference") out.push(["relisted", r.after.reference, r.after.title, FIELD_LABEL[k] ?? k, r.before[k], r.after[k]]);
+    out.push(["relisted", r.after.reference, r.after.title, "Reference", r.signals.join("; "), r.before.reference, r.after.reference]);
+    for (const c of r.changes.material) out.push(["relisted", r.after.reference, r.after.title, FIELD_LABEL[c.key] ?? c.key, c.summary, r.before[c.key], r.after[c.key]]);
   }
   for (const c of diff.changed) {
-    for (const k of c.keys) {
-      out.push(["changed", c.after.reference, c.after.title, FIELD_LABEL[k] ?? k, c.before[k], c.after[k]]);
+    for (const f of c.changes.material) {
+      out.push(["changed", c.after.reference, c.after.title, FIELD_LABEL[f.key] ?? f.key, f.summary, c.before[f.key], c.after[f.key]]);
     }
   }
-  return toCsv(["change", "reference", "title", "field", "old_value", "new_value"], out);
+  for (const c of diff.completenessOnly) {
+    for (const f of c.changes.completeness) out.push([f.kind, c.after.reference, c.after.title, FIELD_LABEL[f.key] ?? f.key, f.summary, c.before[f.key], c.after[f.key]]);
+  }
+  return toCsv(["change", "reference", "title", "field", "summary", "old_value", "new_value"], out);
 }
 
 const LISTING_COLUMNS: (keyof Listing)[] = [

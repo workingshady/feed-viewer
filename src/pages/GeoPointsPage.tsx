@@ -780,7 +780,7 @@ const GeoPointsPage = () => {
                   <div className={cn("flex items-center gap-2", withCoords.length < 20 && "opacity-60")}>
                     <Select
                       value={outlierMode}
-                      onValueChange={(v) => setOutlierMode(v as any)}
+                      onValueChange={(v) => setOutlierMode(v as typeof outlierMode)}
                       disabled={withCoords.length < 20}
                     >
                       <SelectTrigger className="h-9 w-[200px] rounded-xl">
@@ -836,7 +836,7 @@ const GeoPointsPage = () => {
           </Card>
         </div>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="w-full">
           <TabsList className="grid w-full grid-cols-2 rounded-2xl h-12 mb-4">
             <TabsTrigger value="map" className="gap-2">
               <MapPin className="w-4 h-4" aria-hidden />

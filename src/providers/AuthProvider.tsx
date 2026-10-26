@@ -91,8 +91,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     function onUnauthorized() {
       setUser(null);
     }
-    window.addEventListener("auth:unauthorized", onUnauthorized as any);
-    return () => window.removeEventListener("auth:unauthorized", onUnauthorized as any);
+    window.addEventListener("auth:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("auth:unauthorized", onUnauthorized);
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
