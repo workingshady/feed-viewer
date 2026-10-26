@@ -6,6 +6,7 @@ import {
   BarChart3,
   ClipboardList,
   FileDown,
+  FileSearch,
   GitBranch,
   Image as ImageIconLucide,
   ImageOff,
@@ -14,6 +15,7 @@ import {
   Loader2,
   PieChart as PieChartIcon,
   ScanSearch,
+  ShieldAlert,
   Table2,
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
@@ -33,7 +35,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartTableActions, Columns, DataTable, Donut, HBars, SERIES, type TableData } from "@/components/charts/ChartKit";
 import {
-  XML_EDA_MAX_LISTINGS_CEILING,
   XML_EDA_MAX_PATHS_CEILING,
   computeFieldCoabsenceMatrix,
   computeFieldCoverageBuckets,
@@ -41,7 +42,6 @@ import {
   computeImageCountDistribution,
   computeMissingFieldCountDistribution,
   computeSegmentQuality,
-  computeXmlPathPresence,
   countListingsAllRequiredFilled,
   countMissingListingFields,
   filterListingsByPurpose,
@@ -63,11 +63,23 @@ import { useVersionListings } from "@/hooks/useSources";
 import { liveVersionOf, type SourceDTO, type VersionDTO } from "@/lib/sourcesApi";
 import { useAppData } from "@/providers/DataProvider";
 import { cn } from "@/lib/utils";
+import { useDataProfile } from "@/hooks/useDataProfile";
+import { profileInsights, type Insight } from "@/lib/dataProfile";
+import {
+  FieldProfilesPanel,
+  IssuesPanel,
+  KeyInsights,
+  ProfilingNote,
+  QualityScorecard,
+  ValueFormatsCard,
+  XmlSummary,
+  XmlTreePanel,
+} from "@/components/quality/ProfilePanels";
 
 const LISTINGS = [{ key: "count", label: "Listings", color: SERIES[0] }];
 const COVERAGE = [{ key: "pct", label: "Coverage %", color: SERIES[0] }];
 const pctFmt = (n: number) => `${Math.round(n)}%`;
-type DashboardTab = "overview" | "mapped" | "xml" | "segments" | "patterns" | "report";
+type DashboardTab = "overview" | "fields" | "issues" | "mapped" | "xml" | "segments" | "patterns" | "report";
 type SortKey = "label" | "filled" | "missing" | "pct";
 type SortDir = "asc" | "desc";
 type XmlPathTableSortKey = "path" | "withValue" | "withPath" | "pctSample" | "pctWhenPresent";
@@ -142,7 +154,6 @@ function downloadTextFile(filename: string, content: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-const XML_SAMPLE_PRESETS = [400, 800, 1200, 2000, 3500, 5000] as const;
 const XML_PATH_PRESETS = [40, 80, 120, 200] as const;
 
 export default function FieldQualityPage() {
@@ -203,7 +214,7 @@ function FieldQualityBody({
   onVersionChange: (id: string) => void;
 }) {
   const [dashTab, setDashTab] = useState<DashboardTab>("overview");
-  const [xmlMaxListings, setXmlMaxListings] = useState(1200);
+  const [focusField, setFocusField] = useState<string | undefined>();
   const [xmlMaxPaths, setXmlMaxPaths] = useState(80);
   const [prefixDepth, setPrefixDepth] = useState<1 | 2 | 3>(2);
   const [xmlPathSearch, setXmlPathSearch] = useState("");
@@ -234,14 +245,48 @@ function FieldQualityBody({
 
   const presenceRows = useMemo(() => computeFieldPresenceTable(analyticsListings), [analyticsListings]);
   const missingDist = useMemo(() => computeMissingFieldCountDistribution(analyticsListings), [analyticsListings]);
-  const xmlEda = useMemo(
-    () =>
-      computeXmlPathPresence(analyticsListings, {
-        maxListings: xmlMaxListings,
-        maxPaths: xmlMaxPaths,
-      }),
-    [analyticsListings, xmlMaxListings, xmlMaxPaths],
+  const isLiveVersion = version.id === liveVersionOf(source)?.id;
+  const { profile, xml: xmlProfile, progress: profileProgress, running: profiling, error: profileError } = useDataProfile(
+    analyticsListings,
+    `${version.id}:${purposeFilter}:${analyticsListings.length}`,
   );
+  const insights = useMemo(() => {
+    if (!profile) return [];
+    const out = profileInsights(profile);
+    if (xmlProfile?.unusedWithData) {
+      const names = xmlProfile.paths.filter((p) => p.warnings.includes("Has data the app does not use")).map((p) => p.short);
+      out.push({ severity: "info", text: `${xmlProfile.unusedWithData} raw XML path${xmlProfile.unusedWithData === 1 ? " has" : "s have"} data the app does not read: ${names.slice(0, 4).join(", ")}${names.length > 4 ? "…" : ""}.`, go: "xml" });
+    }
+    const mixed = xmlProfile?.paths.filter((p) => p.mixedTypes) ?? [];
+    if (mixed.length) out.push({ severity: "warning", text: `${mixed.length} XML path${mixed.length === 1 ? " mixes" : "s mix"} value types (e.g. numbers and text): ${mixed.slice(0, 3).map((p) => p.short).join(", ")}.`, go: "xml" });
+    return out;
+  }, [profile, xmlProfile]);
+  const goTo = (tab: NonNullable<Insight["go"]>, field?: string) => {
+    setFocusField(field);
+    setDashTab(tab);
+  };
+  const xmlEda = useMemo(() => {
+    const all = (xmlProfile?.paths ?? []).filter((p) => !p.isAttribute);
+    const rowsFull = all
+      .map((p) => ({
+        path: p.path,
+        listingsWithPath: p.listingsWithPath,
+        listingsWithValue: p.listingsWithValue,
+        pctOfSampleWithValue: Math.round(p.fillPct * 10) / 10,
+        pctOfAppearancesFilled: Math.round(p.filledWhenPresentPct * 10) / 10,
+      }))
+      .sort((a, b) => a.pctOfSampleWithValue - b.pctOfSampleWithValue || b.listingsWithPath - a.listingsWithPath);
+    const rows = rowsFull.slice(0, xmlMaxPaths);
+    return {
+      rows,
+      sampleSize: xmlProfile?.sampleSize ?? 0,
+      truncatedListings: false,
+      listingsSkippedNoRawXml: xmlProfile?.skippedNoXml ?? 0,
+      totalPathsDiscovered: rowsFull.length,
+      pathsShown: rows.length,
+      pathsTruncated: rowsFull.length > rows.length,
+    };
+  }, [xmlProfile, xmlMaxPaths]);
 
   const coabsenceKeys = useMemo(
     () => pickCoabsenceFieldKeys(presenceRows, heatmapKeyLimit),
@@ -654,6 +699,19 @@ function FieldQualityBody({
                 <BarChart3 className="w-3.5 h-3.5 opacity-70" />
                 Overview
               </TabsTrigger>
+              <TabsTrigger value="fields" className="text-xs sm:text-sm gap-1.5">
+                <FileSearch className="w-3.5 h-3.5 opacity-70" />
+                Field profiles
+              </TabsTrigger>
+              <TabsTrigger value="issues" className="text-xs sm:text-sm gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5 opacity-70" />
+                Issues
+                {profile && profile.rules.some((r) => r.severity === "error" && r.count > 0) && (
+                  <span className="rounded-full bg-destructive/15 px-1.5 text-[10px] font-semibold text-destructive tabular-nums">
+                    {profile.rules.filter((r) => r.severity === "error" && r.count > 0).length}
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="mapped" className="text-xs sm:text-sm gap-1.5">
                 <Table2 className="w-3.5 h-3.5 opacity-70" />
                 Mapped schema
@@ -677,6 +735,14 @@ function FieldQualityBody({
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6 outline-none mt-0">
+              {profileError && <p className="text-sm text-destructive">Full analysis failed: {profileError}</p>}
+              {profiling && !profile && <ProfilingNote progress={profileProgress} n={analyticsListings.length} />}
+              {profile && (
+                <div className="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
+                  <QualityScorecard profile={profile} xml={xmlProfile} />
+                  <KeyInsights insights={insights} onGo={goTo} />
+                </div>
+              )}
               <Card className="border-primary/12 bg-muted/15 shadow-none">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-heading">Interactive coverage settings</CardTitle>
@@ -746,13 +812,9 @@ function FieldQualityBody({
                 />
                 <Kpi label="Agent photo missing" value={kpis.missingAgentPhoto.toLocaleString()} hint="Name but no photo URL" />
                 <Kpi
-                  label="XML EDA sample"
-                  value={String(xmlEda.sampleSize)}
-                  hint={
-                    xmlEda.truncatedListings
-                      ? `${analyticsListings.length} in analysis; scan cap ${xmlMaxListings}`
-                      : "All listings in analysis scope"
-                  }
+                  label="Raw XML scanned"
+                  value={xmlProfile ? `${xmlProfile.sampleSize.toLocaleString()} listings` : "…"}
+                  hint={xmlProfile ? `All listings in scope · ${xmlProfile.paths.length} paths found` : "Scanning every listing"}
                 />
               </div>
 
@@ -887,6 +949,21 @@ function FieldQualityBody({
 
             </TabsContent>
 
+            <TabsContent value="fields" className="space-y-4 outline-none mt-0">
+              {profile ? (
+                <FieldProfilesPanel key={focusField ?? "all"} profile={profile} linkable={isLiveVersion} focus={focusField} />
+              ) : (
+                <ProfilingNote progress={profileProgress} n={analyticsListings.length} />
+              )}
+            </TabsContent>
+
+            <TabsContent value="issues" className="space-y-4 outline-none mt-0">
+              {profile ? <IssuesPanel profile={profile} linkable={isLiveVersion} /> : <ProfilingNote progress={profileProgress} n={analyticsListings.length} />}
+              {profile && !isLiveVersion && (
+                <p className="text-xs text-muted-foreground">Listing links are available on the live version only; this is an older version.</p>
+              )}
+            </TabsContent>
+
             <TabsContent value="mapped" className="space-y-4 outline-none mt-0">
               <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
                 <div className="flex-1 space-y-2">
@@ -984,6 +1061,14 @@ function FieldQualityBody({
             </TabsContent>
 
             <TabsContent value="xml" className="space-y-4 outline-none mt-0">
+              {xmlProfile ? (
+                <>
+                  <XmlSummary xml={xmlProfile} />
+                  <XmlTreePanel xml={xmlProfile} />
+                </>
+              ) : (
+                <ProfilingNote progress={profileProgress} n={analyticsListings.length} />
+              )}
               <Card className="border-primary/12 shadow-none">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-heading flex items-center gap-2">
@@ -991,31 +1076,13 @@ function FieldQualityBody({
                     Raw XML path scan
                   </CardTitle>
                   <CardDescription>
-                    Flattened paths from each listing&apos;s property XML. Larger samples cost more CPU; caps are{" "}
-                    {XML_EDA_MAX_LISTINGS_CEILING} listings and {XML_EDA_MAX_PATHS_CEILING} paths in the table.
+                    Flattened paths from the property XML of <strong>every</strong> listing in scope (
+                    {xmlEda.sampleSize.toLocaleString()} scanned), so the numbers are exact, not estimates. Up to{" "}
+                    {XML_EDA_MAX_PATHS_CEILING} paths are listed in the table below.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4">
                   <div className="flex flex-wrap gap-4 items-end">
-                    <div className="space-y-2 min-w-[160px]">
-                      <Label className="text-xs text-muted-foreground">Max listings to scan</Label>
-                      <Select
-                        value={String(xmlMaxListings)}
-                        onValueChange={(v) => setXmlMaxListings(Number(v))}
-                      >
-                        <SelectTrigger className="rounded-xl w-[200px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {XML_SAMPLE_PRESETS.map((n) => (
-                            <SelectItem key={n} value={String(n)}>
-                              {n.toLocaleString()}
-                              {n === XML_EDA_MAX_LISTINGS_CEILING ? " (max)" : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div className="space-y-2 min-w-[160px]">
                       <Label className="text-xs text-muted-foreground">Max paths in table</Label>
                       <Select value={String(xmlMaxPaths)} onValueChange={(v) => setXmlMaxPaths(Number(v))}>
@@ -1337,6 +1404,7 @@ function FieldQualityBody({
             </TabsContent>
 
             <TabsContent value="patterns" className="space-y-6 outline-none mt-0">
+              {profile && <ValueFormatsCard profile={profile} />}
               <Card className="border-primary/12 shadow-none">
                 <CardHeader>
                   <CardTitle className="text-base font-heading">Co-missing fields</CardTitle>
@@ -1397,6 +1465,12 @@ function FieldQualityBody({
             </TabsContent>
 
             <TabsContent value="report" className="space-y-6 outline-none mt-0">
+              {profile && (
+                <div className="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
+                  <QualityScorecard profile={profile} xml={xmlProfile} />
+                  <KeyInsights insights={insights} onGo={goTo} />
+                </div>
+              )}
               <Card className="border-primary/12 shadow-none">
                 <CardHeader>
                   <CardTitle className="text-base font-heading">Narrative summary</CardTitle>
