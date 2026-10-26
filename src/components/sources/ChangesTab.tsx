@@ -17,6 +17,7 @@ import { UI_FIELDS, type Listing } from "@/lib/types";
 import { BarList, listingHref } from "./BarList";
 import { DiffBadges } from "./VersionRow";
 import { useMatchDecisions } from "@/hooks/useMatching";
+import { withSourceIds } from "@/lib/listingIds";
 import { useAppData } from "@/providers/DataProvider";
 import { ListingChangeRow } from "@/components/compare/ListingChangeRow";
 import { EvidenceList } from "@/components/compare/MatchEvidence";
@@ -95,7 +96,8 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
 
   const data = useMemo(() => {
     if (!after.data || (prev && !before.data)) return null;
-    const diff = diffListings(before.data ?? [], after.data, overrides);
+    // Same ids the rest of the app uses, so verdicts and links line up.
+    const diff = diffListings(withSourceIds(source, before.data ?? []), withSourceIds(source, after.data), overrides);
     return {
       diff,
       moves: priceMoves(diff),

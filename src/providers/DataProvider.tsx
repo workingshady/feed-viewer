@@ -4,10 +4,8 @@ import { DataContext, type AppData, type ListingsScope } from "@/providers/dataC
 import { useAuth } from "@/providers/AuthProvider";
 import { SOURCES_KEY, useLiveListings, useSourcesQuery } from "@/hooks/useSources";
 import { liveVersionOf, type SourceDTO } from "@/lib/sourcesApi";
-import { importListingDiffKey } from "@/lib/importAnalysis";
-import { currencyCode } from "@/lib/displayPrice";
-import { amenityLabel } from "@/lib/amenityCodes";
 import type { Listing } from "@/lib/types";
+import { withSourceIds } from "@/lib/listingIds";
 import { useAutoRetrain, useMatchModel } from "@/hooks/useMatching";
 
 export type { ListingsScope, AppData } from "@/providers/dataContext";
@@ -23,20 +21,6 @@ function readScope(): ListingsScope {
   } catch {
     return { mode: "all" };
   }
-}
-
-/**
- * Listings ids are made unique across sources and stable across versions, so favorites and
- * compare selections survive switching versions.
- */
-function withSourceIds(source: SourceDTO, listings: Listing[]): Listing[] {
-  return listings.map((l) => ({
-    ...l,
-    id: `${source.id}:${importListingDiffKey(l)}`,
-    sourceAgency: source.name,
-    currency: currencyCode(l.currency),
-    amenities: (l.amenities ?? []).map(amenityLabel),
-  }));
 }
 
 export function DataProvider({ children }: { children: React.ReactNode }) {

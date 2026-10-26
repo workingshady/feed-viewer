@@ -438,7 +438,7 @@ function GroupCard({ g, logo, onCompare }: { g: Group; logo: Map<string, string 
           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={onCompare}>
             <GitCompare className="mr-1 h-3.5 w-3.5" /> Compare
           </Button>
-          <VerdictButtons ids={g.items.map((x) => x.listing.id)} context="agencies" />
+          <VerdictButtons listings={g.items.map((x) => x.listing)} context="agencies" />
         </span>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">

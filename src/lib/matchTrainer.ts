@@ -70,6 +70,16 @@ function report(message: string) {
   if (s.status === "running") set({ ...s, message });
 }
 
+/** Compacts listings in slices, yielding between them so the page stays responsive. */
+async function compactAll(listings: Listing[]): Promise<Listing[]> {
+  const out: Listing[] = [];
+  for (let i = 0; i < listings.length; i += 2000) {
+    for (const l of listings.slice(i, i + 2000)) out.push(compact(l));
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return out;
+}
+
 export async function runTraining(opts: {
   sources: SourceDTO[];
   listingsByAgency: Map<string, Listing[]>;
@@ -93,13 +103,13 @@ export async function runTraining(opts: {
       const live = liveVersionOf(s)!;
       if (oldest.id === live.id) continue;
       const [a, b] = await Promise.all([fetchVersionListings(oldest.listingsBlobUrl), fetchVersionListings(live.listingsBlobUrl)]);
-      versions.push({ old: a.map(compact), new: b.map(compact) });
+      versions.push({ old: await compactAll(a), new: await compactAll(b) });
     }
 
     const decisions = await getMatchDecisions();
     const req: TrainRequest = {
       versions,
-      agencies: [...opts.listingsByAgency].map(([group, ls]) => ({ group, listings: ls.map(compact) })),
+      agencies: await Promise.all([...opts.listingsByAgency].map(async ([group, ls]) => ({ group, listings: await compactAll(ls) }))),
       labels: decisions.map((d) => ({ listingIds: d.listingIds, verdict: d.verdict, context: d.context })),
       current: getMatchWeights(),
     };

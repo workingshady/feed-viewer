@@ -111,11 +111,18 @@ export function MatchingModelCard() {
             <div className="text-xs font-medium text-muted-foreground">Active model</div>
             <div className="mt-1 font-semibold">{m ? `Trained ${timeAgo(m.createdAt)} (${m.trigger})` : "Built-in (shipped with the app)"}</div>
             <div className="mt-1 text-[11px] text-muted-foreground">
-              {active.data ? `${active.data.decisions.toLocaleString()} reviewer verdicts · ${active.data.decisionsSince} since this model` : "…"}
+              {active.data
+                ? `${active.data.decisions.toLocaleString()} reviewer verdicts · ${active.data.decisionsSince} since the last training${active.data.lastTrainedAt ? ` (${timeAgo(active.data.lastTrainedAt)})` : ""}`
+                : "…"}
             </div>
-            <Link to="/cross-agency-dupes" className="mt-2 inline-block text-xs font-medium text-primary-text hover:underline">
-              Open the review queue →
-            </Link>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              <Link to="/match-reviews" className="text-xs font-medium text-primary-text hover:underline">
+                See all verdicts →
+              </Link>
+              <Link to="/cross-agency-dupes" className="text-xs font-medium text-primary-text hover:underline">
+                Open the review queue →
+              </Link>
+            </div>
           </div>
         </div>
 

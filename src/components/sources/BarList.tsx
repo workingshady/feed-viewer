@@ -4,7 +4,7 @@ import type { Listing } from "@/lib/types";
 
 /** Link to a listing's detail page; ids match the ones DataProvider assigns to live listings. */
 export const listingHref = (sourceId: string, l: Listing) =>
-  `/listing/${encodeURIComponent(`${sourceId}:${importListingDiffKey(l)}`)}`;
+  `/listing/${encodeURIComponent(l.id?.startsWith(`${sourceId}:`) ? l.id : `${sourceId}:${importListingDiffKey(l)}`)}`;
 
 /**
  * Horizontal bars with labels and counts — readable at any width and accessible as a plain list,

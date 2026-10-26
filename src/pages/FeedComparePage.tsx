@@ -21,6 +21,7 @@ import { diffListings, type VersionDiff } from "@/lib/versionDiff";
 import { categoryCounts, completenessByField, median, priceChangeBands, priceMoveRows } from "@/lib/versionInsights";
 import { downloadText } from "@/components/sources/format";
 import { useAppData } from "@/providers/DataProvider";
+import { withSourceIds } from "@/lib/listingIds";
 import { useDecide, useMatchDecisions } from "@/hooks/useMatching";
 import { VerdictButtons } from "@/components/compare/VerdictButtons";
 import {
@@ -100,11 +101,14 @@ export default function FeedComparePage() {
 
   const qA = useVersionListings(versionA);
   const qB = useVersionListings(versionB);
+  // Same ids the rest of the app uses ("<source id>:<reference>"), so verdicts and links line up.
+  const listingsA = useMemo(() => (source && qA.data ? withSourceIds(source, qA.data) : null), [source, qA.data]);
+  const listingsB = useMemo(() => (source && qB.data ? withSourceIds(source, qB.data) : null), [source, qB.data]);
   const diff: VersionDiff | null = useMemo(
-    () => (qA.data && qB.data && versionA?.id !== versionB?.id ? diffListings(qA.data, qB.data, overrides) : null),
+    () => (listingsA && listingsB && versionA?.id !== versionB?.id ? diffListings(listingsA, listingsB, overrides) : null),
     // The model key re-runs matching when a newly trained model becomes active.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [qA.data, qB.data, versionA?.id, versionB?.id, overrides, matchModelKey],
+    [listingsA, listingsB, versionA?.id, versionB?.id, overrides, matchModelKey],
   );
 
   const [tab, setTab] = useState<Tab>(tabFromHash);
@@ -112,7 +116,7 @@ export default function FeedComparePage() {
     if (window.location.hash !== `#${tab}`) window.history.replaceState(null, "", `#${tab}`);
   }, [tab]);
 
-  const busy = qA.isLoading || qB.isLoading || (!!qA.data && !!qB.data && !diff && versionA?.id !== versionB?.id);
+  const busy = qA.isLoading || qB.isLoading || (!!listingsA && !!listingsB && !diff && versionA?.id !== versionB?.id);
   const aIsLive = !!versionA && versionA.id === live?.id;
   const bIsLive = !!versionB && versionB.id === live?.id;
   const hrefB = (l: Listing) => (bIsLive && source ? listingHref(source.id, l) : undefined);
@@ -193,7 +197,7 @@ export default function FeedComparePage() {
         )}
 
         {diff && versionA && versionB && source && (
-          <Results diff={diff} tab={tab} setTab={setTab} a={versionA} b={versionB} countA={qA.data!.length} countB={qB.data!.length} listingsB={qB.data!} hrefA={hrefA} hrefB={hrefB} />
+          <Results diff={diff} tab={tab} setTab={setTab} a={versionA} b={versionB} countA={listingsA!.length} countB={listingsB!.length} listingsB={listingsB!} hrefA={hrefA} hrefB={hrefB} />
         )}
       </main>
     </div>
@@ -524,7 +528,7 @@ function RelistedPanel({ diff, hrefB, labels }: { diff: VersionDiff; hrefB: (l: 
                   <ArrowRight className="h-3 w-3" aria-hidden />
                   <span className="font-mono font-semibold">{r.after.reference}</span>
                   <ScoreMeter score={r.score} threshold={getMatchWeights().versions.match} />
-                  <VerdictButtons ids={[r.before.id, r.after.id]} context="versions" />
+                  <VerdictButtons listings={[r.before, r.after]} context="versions" />
                 </div>
                 <EvidenceList evidence={r.evidence} limit={4} compact />
               </div>
@@ -557,7 +561,7 @@ function ReviewPanel({ diff }: { diff: VersionDiff }) {
             <div className="flex flex-wrap items-center gap-3">
               <ScoreMeter score={p.score} threshold={getMatchWeights().versions.match} />
               <EvidenceList evidence={p.evidence} limit={5} compact />
-              <VerdictButtons ids={[p.before.id, p.after.id]} context="versions" className="ml-auto" />
+              <VerdictButtons listings={[p.before, p.after]} context="versions" className="ml-auto" />
             </div>
           </li>
         ))}

@@ -32,6 +32,7 @@ matchingRouter.get(
       decisions: rows.map((r) => ({
         pairKey: r.pairKey,
         listingIds: r.listingIds,
+        snapshot: r.snapshot,
         verdict: r.verdict,
         context: r.context,
         by: r.createdBy?.username ?? null,
@@ -50,16 +51,35 @@ matchingRouter.put(
         listingIds: z.array(z.string().min(1).max(300)).min(2).max(12),
         verdict: z.enum(["same", "different"]).nullable(),
         context: z.enum(["versions", "agencies"]),
+        snapshot: z
+          .array(
+            z.object({
+              id: z.string().max(300),
+              agency: z.string().max(200).optional(),
+              reference: z.string().max(200).optional(),
+              title: z.string().max(300).optional(),
+              price: z.number().finite().optional(),
+              currency: z.string().max(10).optional(),
+              image: z.string().max(1000).optional(),
+              community: z.string().max(200).optional(),
+              beds: z.number().finite().optional(),
+              area: z.number().finite().optional(),
+              permit: z.string().max(100).optional(),
+            }),
+          )
+          .max(12)
+          .optional(),
       })
       .parse(req.body);
+    const snapshot = (body.snapshot ?? undefined) as Prisma.InputJsonValue | undefined;
     const key = pairKey(body.listingIds);
     if (body.verdict === null) {
       await prisma.matchDecision.deleteMany({ where: { pairKey: key } });
     } else {
       await prisma.matchDecision.upsert({
         where: { pairKey: key },
-        create: { pairKey: key, listingIds: body.listingIds, verdict: body.verdict, context: body.context, createdById: req.user!.id },
-        update: { verdict: body.verdict, context: body.context, createdById: req.user!.id },
+        create: { pairKey: key, listingIds: body.listingIds, snapshot, verdict: body.verdict, context: body.context, createdById: req.user!.id },
+        update: { verdict: body.verdict, context: body.context, createdById: req.user!.id, ...(snapshot ? { snapshot } : {}) },
       });
     }
     await recordAudit(req.user!.id, "matching.decision", "match", key, { verdict: body.verdict, context: body.context });
@@ -72,16 +92,21 @@ const modelSummary = { id: true, metrics: true, active: true, trigger: true, cre
 matchingRouter.get(
   "/model",
   asyncHandler(async (_req, res) => {
-    const [model, decisions, lastClaim] = await Promise.all([
+    const [model, latest, decisions, lastClaim] = await Promise.all([
       prisma.matchModel.findFirst({ where: { active: true }, orderBy: { activatedAt: "desc" } }),
+      prisma.matchModel.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
       prisma.matchDecision.count(),
       prisma.auditEvent.findFirst({ where: { action: "matching.train.claim" }, orderBy: { createdAt: "desc" } }),
     ]);
-    const decisionsSince = model ? await prisma.matchDecision.count({ where: { updatedAt: { gt: model.createdAt } } }) : decisions;
+    // Retraining is scheduled from the last attempt (activated or held back), so a model that fails
+    // the gate does not trigger a retrain on every visit.
+    const lastTrainedAt = latest?.createdAt ?? null;
+    const decisionsSince = lastTrainedAt ? await prisma.matchDecision.count({ where: { updatedAt: { gt: lastTrainedAt } } }) : decisions;
     res.json({
       model: model ? { id: model.id, weights: model.weights, metrics: model.metrics, trigger: model.trigger, createdAt: model.createdAt, activatedAt: model.activatedAt } : null,
       decisions,
       decisionsSince,
+      lastTrainedAt,
       trainingSince: lastClaim && Date.now() - lastClaim.createdAt.getTime() < CLAIM_TTL_MS ? lastClaim.createdAt : null,
     });
   }),

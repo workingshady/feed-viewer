@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { getActiveModel, getMatchDecisions, putMatchDecision, type MatchDecisionDTO, type MatchVerdict } from "@/lib/matchingApi";
+import { getActiveModel, getMatchDecisions, putMatchDecision, type ListingSnapshot, type MatchDecisionDTO, type MatchVerdict } from "@/lib/matchingApi";
 import { pairKey, setMatchWeights, type MatchContext, type MatchOverrides } from "@/lib/propertyMatch";
 import { runTraining } from "@/lib/matchTrainer";
 import { hasRole } from "@/lib/roles";
@@ -42,14 +42,16 @@ export function useDecide() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: putMatchDecision,
-    onMutate: async (body: { listingIds: string[]; verdict: MatchVerdict | null; context: MatchContext }) => {
+    onMutate: async (body: { listingIds: string[]; verdict: MatchVerdict | null; context: MatchContext; snapshot?: ListingSnapshot[] }) => {
       await qc.cancelQueries({ queryKey: MATCH_DECISIONS_KEY });
       const prev = qc.getQueryData<MatchDecisionDTO[]>(MATCH_DECISIONS_KEY);
       const key = pairKey(body.listingIds);
       const rest = (prev ?? []).filter((d) => d.pairKey !== key);
       qc.setQueryData<MatchDecisionDTO[]>(
         MATCH_DECISIONS_KEY,
-        body.verdict ? [{ pairKey: key, listingIds: body.listingIds, verdict: body.verdict, context: body.context, by: null, updatedAt: new Date().toISOString() }, ...rest] : rest,
+        body.verdict
+          ? [{ pairKey: key, listingIds: body.listingIds, snapshot: body.snapshot, verdict: body.verdict, context: body.context, by: null, updatedAt: new Date().toISOString() }, ...rest]
+          : rest,
       );
       return { prev };
     },
@@ -84,8 +86,11 @@ export function useAutoRetrain(sources: SourceDTO[], listingsByAgency: Map<strin
     if (!canTrain || loading || !model.data || model.data.trainingSince) return;
     const m = model.data;
     const history = sources.filter((s) => s.versions.length >= 2).length;
-    const ageDays = m.model ? (Date.now() - new Date(m.model.createdAt).getTime()) / 86_400_000 : Infinity;
-    const due = m.model ? ageDays >= RETRAIN_AFTER_DAYS || m.decisionsSince >= RETRAIN_AFTER_DECISIONS : history >= 3;
+    const last = m.lastTrainedAt ? new Date(m.lastTrainedAt).getTime() : null;
+    const ageDays = last ? (Date.now() - last) / 86_400_000 : Infinity;
+    // Due when the last run (whatever its outcome) is a week old or enough new verdicts arrived;
+    // the very first run waits until there is version history to learn from.
+    const due = last ? ageDays >= RETRAIN_AFTER_DAYS || m.decisionsSince >= RETRAIN_AFTER_DECISIONS : history >= 3;
     if (!due) return;
     try {
       const last = Number(localStorage.getItem(ATTEMPT_KEY) ?? 0);
@@ -93,7 +98,7 @@ export function useAutoRetrain(sources: SourceDTO[], listingsByAgency: Map<strin
     } catch {
       /* storage blocked: still fine to try once this session */
     }
-    const t = window.setTimeout(() => {
+    const start = () => {
       try {
         localStorage.setItem(ATTEMPT_KEY, String(Date.now()));
       } catch {
@@ -105,7 +110,16 @@ export function useAutoRetrain(sources: SourceDTO[], listingsByAgency: Map<strin
         trigger: "auto",
         onSaved: () => void qc.invalidateQueries({ queryKey: MATCH_MODEL_KEY }),
       });
+    };
+    // Start after the page has settled, when the browser is idle, so nobody notices it.
+    let idle = 0;
+    const t = window.setTimeout(() => {
+      if ("requestIdleCallback" in window) idle = window.requestIdleCallback(start, { timeout: 60_000 });
+      else start();
     }, START_DELAY_MS);
-    return () => window.clearTimeout(t);
+    return () => {
+      window.clearTimeout(t);
+      if (idle && "cancelIdleCallback" in window) window.cancelIdleCallback(idle);
+    };
   }, [canTrain, loading, model.data, sources, listingsByAgency, qc]);
 }

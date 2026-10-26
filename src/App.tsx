@@ -36,6 +36,7 @@ const DatabasePage = lazy(() => import("./pages/DatabasePage"));
 const FavoritesPage = lazy(() => import("./pages/FavoritesPage"));
 const FeedComparePage = lazy(() => import("./pages/FeedComparePage"));
 const CrossAgencyDupesPage = lazy(() => import("./pages/CrossAgencyDupesPage"));
+const MatchReviewsPage = lazy(() => import("./pages/MatchReviewsPage"));
 const FieldQualityPage = lazy(() => import("./pages/FieldQualityPage"));
 const GeoPointsPage = lazy(() => import("./pages/GeoPointsPage"));
 const WorkspaceInsightsPage = lazy(() => import("./pages/WorkspaceInsightsPage"));
@@ -61,6 +62,7 @@ const PROTECTED: [string, LazyExoticComponent<ComponentType>][] = [
   ["/compare", ComparePage],
   ["/feed-compare", FeedComparePage],
   ["/cross-agency-dupes", CrossAgencyDupesPage],
+  ["/match-reviews", MatchReviewsPage],
   ["/field-quality", FieldQualityPage],
   ["/mapping-qa", MappingQaPage],
   ["/listings/map", GeoPointsPage],

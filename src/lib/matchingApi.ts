@@ -4,9 +4,25 @@ import type { ModelTables, TrainingResult } from "@/lib/matchTraining";
 
 export type MatchVerdict = "same" | "different";
 
+/** What the reviewer saw for one listing, stored with the verdict. */
+export type ListingSnapshot = {
+  id: string;
+  agency?: string;
+  reference?: string;
+  title?: string;
+  price?: number;
+  currency?: string;
+  image?: string;
+  community?: string;
+  beds?: number;
+  area?: number;
+  permit?: string;
+};
+
 export type MatchDecisionDTO = {
   pairKey: string;
   listingIds: string[];
+  snapshot?: ListingSnapshot[] | null;
   verdict: MatchVerdict;
   context: MatchContext;
   by: string | null;
@@ -15,9 +31,11 @@ export type MatchDecisionDTO = {
 
 export type ActiveModelDTO = {
   model: { id: string; weights: ModelTables; metrics: TrainingResult["metrics"]; trigger: "auto" | "manual"; createdAt: string; activatedAt: string | null } | null;
-  /** All decisions, and those made since the active model was trained. */
+  /** All decisions, and those made since the last training run (activated or held back). */
   decisions: number;
   decisionsSince: number;
+  /** Last training run of any outcome; retraining is scheduled from this. */
+  lastTrainedAt: string | null;
   /** Set while another browser is training (claim younger than 30 min). */
   trainingSince: string | null;
 };
@@ -34,7 +52,7 @@ export type ModelSummaryDTO = {
 
 export const getMatchDecisions = () => apiFetch<{ decisions: MatchDecisionDTO[] }>("/api/matching/decisions").then((r) => r.decisions);
 
-export const putMatchDecision = (body: { listingIds: string[]; verdict: MatchVerdict | null; context: MatchContext }) =>
+export const putMatchDecision = (body: { listingIds: string[]; verdict: MatchVerdict | null; context: MatchContext; snapshot?: ListingSnapshot[] }) =>
   apiFetch<{ ok: true; pairKey: string }>("/api/matching/decisions", { method: "PUT", ...jsonBody(body) });
 
 export const getActiveModel = () => apiFetch<ActiveModelDTO>("/api/matching/model");

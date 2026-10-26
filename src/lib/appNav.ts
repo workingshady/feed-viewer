@@ -69,6 +69,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/field-quality", label: "Field quality", icon: ScanSearch, description: "How complete each field is, per version" },
       { to: "/validation", label: "Validation", icon: ClipboardList, description: "Parser issues and changes vs the previous version" },
       { to: "/cross-agency-dupes", label: "Duplicates across agencies", icon: Link2, description: "The same property listed by several agencies" },
+      { to: "/match-reviews", label: "Match reviews", icon: ClipboardCheck, description: "Every same / not-the-same verdict, who made it and when" },
       { to: "/compare", label: "Compare listings", icon: GitCompare, description: "Two or more listings side by side" },
       { to: "/feed-compare", label: "Compare versions", icon: GitCompareArrows, description: "Added, removed and changed listings between versions" },
     ],

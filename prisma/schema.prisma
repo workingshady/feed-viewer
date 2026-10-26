@@ -182,6 +182,8 @@ model MatchDecision {
   /// Sorted listing ids joined with "|": stable across re-runs while the same listings are grouped.
   pairKey     String       @unique
   listingIds  Json
+  /** What the reviewer saw: agency, reference, title, price, photo per listing, kept after listings leave the feed. */
+  snapshot    Json?
   verdict     MatchVerdict
   /// "versions" (re-post within one feed) or "agencies" (across agencies).
   context     String
