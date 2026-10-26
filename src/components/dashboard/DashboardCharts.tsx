@@ -194,11 +194,9 @@ export function ListingCharts({ listings: allListings, sources }: { listings: Li
       .map(([label, v]) => ({ label, median: Math.round(median(v)), count: v.length }))
       .sort((a, b) => b.median - a.median);
 
-    // Size vs price, sale listings only; evenly sampled so big feeds stay fast.
-    const sales = scoped.filter((l) => l.purpose === "sale" && l.price > 0 && l.area > 0);
-    const step = Math.max(1, Math.ceil(sales.length / 1200));
-    const scatter = sales
-      .filter((_, i) => i % step === 0)
+    // Size vs price: every sale listing (the chart draws on canvas, so no sampling is needed).
+    const scatter = scoped
+      .filter((l) => l.purpose === "sale" && l.price > 0 && l.area > 0)
       .map((l) => ({ id: l.id, title: l.title, area: Math.round(l.area), price: l.price }));
 
     return {
@@ -215,7 +213,6 @@ export function ListingCharts({ listings: allListings, sources }: { listings: Li
       prices: priceBands(scoped, purpose === "rent" ? "rent" : "sale"),
       ladder,
       scatter,
-      sampled: step > 1 ? sales.length : 0,
     };
   }, [scoped, purpose]);
 
@@ -265,7 +262,7 @@ export function ListingCharts({ listings: allListings, sources }: { listings: Li
         </ChartCard>
         <ChartCard
           title="Size vs sale price"
-          description={`Each dot is a sale listing (log scales).${data.sampled ? ` Sample of ${data.sampled.toLocaleString()}.` : ""} Click to open.`}
+          description={`All ${data.scatter.length.toLocaleString()} sale listings with a size, one dot each (log scales; darker = more listings). Click a dot to open it.`}
           className="md:col-span-2"
           table={{ columns: ["Listing", "Area (sqft)", `Price (${cur})`], rows: data.scatter.map((d) => [d.title, d.area, d.price]) }}
         >

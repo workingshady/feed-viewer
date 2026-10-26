@@ -221,10 +221,8 @@ export function computeListingAnalytics(listings: Listing[]): ListingAnalytics {
     const a = safeNum(l.area);
     if (p > 0 && a > 0) scatterFull.push({ price: p, area: a, purpose: l.purpose });
   }
-  const scatterPriceArea =
-    scatterFull.length <= 400
-      ? scatterFull
-      : scatterFull.filter((_, i) => i % Math.ceil(scatterFull.length / 400) === 0);
+  // Every priced listing with a size; the chart draws on canvas, so nothing is sampled.
+  const scatterPriceArea = scatterFull;
 
   const agentsByVolume = Array.from(agentMap.entries())
     .map(([name, count]) => ({ name, count }))

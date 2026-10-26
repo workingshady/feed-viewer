@@ -90,6 +90,8 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
   const live = liveVersionOf(source);
   const prev = olderVersion(source, live);
   const after = useVersionListings(live);
+  // Long lists render in pages; "Show all" reveals every row.
+  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
   const before = useVersionListings(prev);
   const { overrides } = useMatchDecisions();
   const { matchModelKey } = useAppData();
@@ -247,7 +249,7 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
             location), so it isn't counted as removed + added.
           </p>
           <ul className="space-y-2">
-            {diff.relisted.slice(0, 200).map((r) => (
+            {diff.relisted.slice(0, showAll.relisted ? undefined : 200).map((r) => (
               <ListingChangeRow
                 key={r.after.reference}
                 before={r.before}
@@ -267,13 +269,18 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
               />
             ))}
           </ul>
+          {diff.relisted.length > 200 && !showAll.relisted && (
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => setShowAll((s) => ({ ...s, relisted: true }))}>
+              Show all {diff.relisted.length.toLocaleString()}
+            </Button>
+          )}
         </TabsContent>
         <TabsContent value="review">
           <p className="mb-2 text-xs text-muted-foreground">
             Possibly the same property under a new reference, but not certain enough to merge. They stay counted as removed and added.
           </p>
           <ul className="divide-y divide-border rounded-lg border text-sm">
-            {diff.possibleRelists.slice(0, 200).map((p, i) => (
+            {diff.possibleRelists.slice(0, showAll.possible ? undefined : 200).map((p, i) => (
               <li key={i} className="space-y-1.5 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="font-mono text-muted-foreground">{p.before.reference}</span>
@@ -287,16 +294,28 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
               </li>
             ))}
           </ul>
+          {diff.possibleRelists.length > 200 && !showAll.possible && (
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => setShowAll((s) => ({ ...s, possible: true }))}>
+              Show all {diff.possibleRelists.length.toLocaleString()}
+            </Button>
+          )}
         </TabsContent>
         <TabsContent value="changed">
           {diff.changed.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">None.</p>
           ) : (
+            <>
             <ul className="space-y-2">
-              {diff.changed.slice(0, 300).map((c) => (
+              {diff.changed.slice(0, showAll.changed ? undefined : 300).map((c) => (
                 <ListingChangeRow key={c.after.reference || c.after.id} before={c.before} after={c.after} changes={c.changes} href={listingHref(source.id, c.after)} />
               ))}
             </ul>
+            {diff.changed.length > 300 && !showAll.changed && (
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => setShowAll((s) => ({ ...s, changed: true }))}>
+                Show all {diff.changed.length.toLocaleString()}
+              </Button>
+            )}
+            </>
           )}
           {diff.completenessOnly.length > 0 && (
             <p className="mt-2 text-xs text-muted-foreground">

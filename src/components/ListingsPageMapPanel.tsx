@@ -5,7 +5,6 @@ import type { Listing } from "@/lib/types";
 import { Focus, Loader2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { GEO_POINTS_MAP_DEFAULT_MAX_PINS } from "@/lib/geoPointsMapConstants";
 
 const LazyGeoPointsMap = lazy(async () => {
   const mod = await import("@/components/GeoPointsMap");
@@ -68,7 +67,6 @@ export function ListingsPageMapPanel({ listings, heightClassName = "h-[min(70vh,
           heightClassName={heightClassName}
           embedded
           defaultBaseLayer="satellite"
-          maxPins={GEO_POINTS_MAP_DEFAULT_MAX_PINS}
           onHoverListingIdChange={setHoveredId}
           onHoverListingPosChange={setHoverPos}
           onSelectListingId={(id) => navigate(`/listing/${id}`)}

@@ -12,13 +12,10 @@ import {
   Pie,
   PieChart,
   ReferenceLine,
-  Scatter,
-  ScatterChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
-  ZAxis,
 } from "recharts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +25,7 @@ import { RECHARTS_BAR_CURSOR, RECHARTS_LINE_CURSOR, RECHARTS_TOOLTIP_PROPS } fro
 import { downloadText } from "@/components/sources/format";
 import { toCsv } from "@/lib/reports";
 import { cn } from "@/lib/utils";
+import { CanvasScatter } from "@/components/charts/CanvasScatter";
 
 /** Categorical slots in their validated order. Assign by entity, never by rank, and never cycle past 8. */
 export const SERIES = Array.from({ length: 8 }, (_, i) => `var(--series-${i + 1})`);
@@ -162,6 +160,9 @@ export function ChartTableActions({
 }
 
 /** The table view of a chart: first column is the label, the rest are right-aligned numbers. */
+/** Rows rendered in the on-screen table; CSV export always includes every row. */
+const TABLE_ROWS = 500;
+
 export function DataTable({ table }: { table: TableData }) {
   return (
     <div className="max-h-80 overflow-auto rounded-md border">
@@ -176,7 +177,7 @@ export function DataTable({ table }: { table: TableData }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {table.rows.map((r, i) => (
+          {table.rows.slice(0, TABLE_ROWS).map((r, i) => (
             <TableRow key={i}>
               {r.map((v, j) => (
                 <TableCell key={j} className={cn("py-1.5 text-xs", j > 0 && "text-right font-mono tabular-nums")}>
@@ -187,6 +188,11 @@ export function DataTable({ table }: { table: TableData }) {
           ))}
         </TableBody>
       </Table>
+      {table.rows.length > TABLE_ROWS && (
+        <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+          Showing {TABLE_ROWS} of {table.rows.length.toLocaleString()} rows; the CSV download has all of them.
+        </p>
+      )}
     </div>
   );
 }
@@ -627,6 +633,7 @@ export function Donut({
 }
 
 /** Relationship between two measures (e.g. size vs price). Log axes suit property prices. */
+/** Relationship between two measures (e.g. size vs price). Every point is drawn (canvas), none sampled. */
 export function ScatterPlot<T extends Record<string, string | number>>({
   data,
   x,
@@ -647,66 +654,7 @@ export function ScatterPlot<T extends Record<string, string | number>>({
   tooltipLabel?: (row: T) => string;
 }) {
   if (!data.length) return <EmptyChart />;
-  const xf = x.format ?? compact;
-  const yf = y.format ?? compact;
-  return (
-    <ResponsiveContainer width="100%" height={height}>
-      <ScatterChart margin={{ top: 8, right: 12, bottom: 16, left: -4 }}>
-        <CartesianGrid stroke={GRID} />
-        <XAxis
-          type="number"
-          dataKey={x.key}
-          name={x.label}
-          scale={log ? "log" : "auto"}
-          domain={["auto", "auto"]}
-          tick={AXIS}
-          tickFormatter={xf}
-          axisLine={{ stroke: GRID }}
-          tickLine={false}
-          label={{ value: x.label, position: "insideBottom", offset: -10, fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
-        />
-        <YAxis
-          type="number"
-          dataKey={y.key}
-          name={y.label}
-          scale={log ? "log" : "auto"}
-          domain={["auto", "auto"]}
-          tick={AXIS}
-          tickFormatter={yf}
-          axisLine={false}
-          tickLine={false}
-          width={56}
-        />
-        <ZAxis range={[28, 28]} />
-        <Tooltip
-          cursor={{ strokeDasharray: "3 3" }}
-          content={({ payload }) => {
-            const row = payload?.[0]?.payload as T | undefined;
-            if (!row) return null;
-            return (
-              <div style={RECHARTS_TOOLTIP_PROPS.contentStyle}>
-                {tooltipLabel && <div style={RECHARTS_TOOLTIP_PROPS.labelStyle}>{tooltipLabel(row)}</div>}
-                <div style={RECHARTS_TOOLTIP_PROPS.itemStyle}>
-                  {x.label}: {xf(Number(row[x.key]))}
-                </div>
-                <div style={RECHARTS_TOOLTIP_PROPS.itemStyle}>
-                  {y.label}: {yf(Number(row[y.key]))}
-                </div>
-              </div>
-            );
-          }}
-        />
-        <Scatter
-          data={data}
-          fill={color}
-          fillOpacity={0.55}
-          isAnimationActive={false}
-          onClick={onSelect ? (d: { payload: T }) => onSelect(d.payload) : undefined}
-          className={onSelect ? "cursor-pointer" : undefined}
-        />
-      </ScatterChart>
-    </ResponsiveContainer>
-  );
+  return <CanvasScatter data={data} x={x} y={y} color={color} height={height} log={log} onSelect={onSelect} tooltipLabel={tooltipLabel} format={compact} />;
 }
 
 /**

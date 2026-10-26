@@ -2,21 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
 import {
-  CircleMarker,
   LayersControl,
   MapContainer,
   TileLayer,
   useMap,
   useMapEvents,
 } from "react-leaflet";
-import { Switch } from "@/components/ui/switch";
-import { GEO_POINTS_MAP_DEFAULT_MAX_PINS } from "@/lib/geoPointsMapConstants";
 import type { Listing } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { OSM_ATTRIBUTION, OSM_TILE_URL, SATELLITE_ATTRIBUTION, SATELLITE_TILE_URL } from "@/components/ListingsMap";
 import "leaflet/dist/leaflet.css";
-
-export { GEO_POINTS_MAP_DEFAULT_MAX_PINS } from "@/lib/geoPointsMapConstants";
 
 export type GeoPointsMapView = {
   center: { lat: number; lng: number };
@@ -66,7 +61,7 @@ function FitBoundsOnce({
   pts: Array<{ lat: number; lng: number }>;
   /** Increment to re-fit to points. */
   fitSignal: number;
-  /** Increment when pin set changes shape (e.g. sampled ↔ all). */
+  /** Increment when the pin set changes shape. */
   layoutRev: number;
 }) {
   const map = useMap();
@@ -102,12 +97,76 @@ function colorForPurpose(purpose: string | undefined) {
   return "#a78bfa"; // violet
 }
 
+type PinHandlers = {
+  onHover?: (id: string | null) => void;
+  onHoverPos?: (pos: { x: number; y: number } | null) => void;
+  onSelect?: (id: string) => void;
+};
+
+const pinStyle = (l: Listing, selected: boolean): L.CircleMarkerOptions => {
+  const c = colorForPurpose(l.purpose);
+  return { color: c, weight: selected ? 2.5 : 1, fillColor: c, fillOpacity: selected ? 0.9 : 0.65 };
+};
+
+/**
+ * Every pin, drawn by Leaflet directly on one canvas. Creating the markers outside React keeps tens
+ * of thousands of pins fast, so the map never needs to sample.
+ */
+function AllPinsLayer({ listings, selectedId, handlers }: { listings: Listing[]; selectedId?: string | null; handlers: PinHandlers }) {
+  const map = useMap();
+  const markers = useRef(new Map<string, { m: L.CircleMarker; l: Listing }>());
+  const h = useRef(handlers);
+  h.current = handlers;
+  const selected = useRef<string | null>(null);
+
+  useEffect(() => {
+    const renderer = L.canvas({ padding: 0.5 });
+    const group = L.layerGroup();
+    const byId = new Map<string, { m: L.CircleMarker; l: Listing }>();
+    for (const l of listings) {
+      const r = clamp(3 + Math.log10((l.images?.length ?? 0) + 1) * 2.2, 3, 7);
+      const m = L.circleMarker([l.latitude!, l.longitude!], { renderer, radius: r, ...pinStyle(l, l.id === selected.current) });
+      m.on("mouseover", () => h.current.onHover?.(l.id));
+      m.on("mouseout", () => {
+        h.current.onHover?.(null);
+        h.current.onHoverPos?.(null);
+      });
+      m.on("mousemove", (e: L.LeafletMouseEvent) => {
+        const pt = e.containerPoint;
+        if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) h.current.onHoverPos?.({ x: pt.x, y: pt.y });
+      });
+      m.on("click", () => h.current.onSelect?.(l.id));
+      m.addTo(group);
+      byId.set(l.id, { m, l });
+    }
+    group.addTo(map);
+    markers.current = byId;
+    return () => {
+      group.remove();
+      renderer.remove();
+    };
+  }, [map, listings]);
+
+  // Restyle only the previously and newly selected pins.
+  useEffect(() => {
+    const prev = selected.current ? markers.current.get(selected.current) : undefined;
+    if (prev) prev.m.setStyle(pinStyle(prev.l, false));
+    const next = selectedId ? markers.current.get(selectedId) : undefined;
+    if (next) {
+      next.m.setStyle(pinStyle(next.l, true));
+      next.m.bringToFront();
+    }
+    selected.current = selectedId ?? null;
+  }, [selectedId, listings]);
+
+  return null;
+}
+
 export function GeoPointsMap({
   listings,
   heightClassName = "h-[min(72vh,700px)]",
   embedded = false,
   defaultBaseLayer = "satellite",
-  maxPins = GEO_POINTS_MAP_DEFAULT_MAX_PINS,
   selectedId,
   onHoverListingIdChange,
   onHoverListingPosChange,
@@ -119,8 +178,6 @@ export function GeoPointsMap({
   heightClassName?: string;
   embedded?: boolean;
   defaultBaseLayer?: "streets" | "satellite";
-  /** Max pins when “sampled” mode is on (toggle appears when coords exceed this). */
-  maxPins?: number;
   /** Selected pin (locked by click). */
   selectedId?: string | null;
   /** Hovered pin (ephemeral). */
@@ -134,8 +191,7 @@ export function GeoPointsMap({
   /** Increment to re-fit bounds to current points. */
   fitBoundsSignal?: number;
 }) {
-  const [showAllPins, setShowAllPins] = useState(false);
-  const [layoutRev, setLayoutRev] = useState(0);
+  const layoutRev = 0;
 
   const withCoords = useMemo(() => {
     const pts = listings.filter(
@@ -148,27 +204,7 @@ export function GeoPointsMap({
     return pts;
   }, [listings]);
 
-  const samplingApplies = withCoords.length > maxPins;
-  useEffect(() => {
-    if (!samplingApplies && showAllPins) setShowAllPins(false);
-  }, [samplingApplies, showAllPins]);
-
-  const sampled = useMemo(() => {
-    if (!samplingApplies || showAllPins) return withCoords;
-    const step = Math.ceil(withCoords.length / maxPins);
-    const out: Listing[] = [];
-    for (let i = 0; i < withCoords.length; i += step) out.push(withCoords[i]);
-    return out;
-  }, [withCoords, maxPins, samplingApplies, showAllPins]);
-
-  const pts = useMemo(() => {
-    return sampled.map((l) => ({ lat: l.latitude!, lng: l.longitude! }));
-  }, [sampled]);
-
-  const toggleShowAll = (on: boolean) => {
-    setShowAllPins(on);
-    setLayoutRev((n) => n + 1);
-  };
+  const pts = useMemo(() => withCoords.map((l) => ({ lat: l.latitude!, lng: l.longitude! })), [withCoords]);
 
   const center: [number, number] =
     pts.length > 0 ? [pts[0].lat, pts[0].lng] : [25.2048, 55.2708];
@@ -198,28 +234,6 @@ export function GeoPointsMap({
         embedded ? "rounded-b-2xl" : "rounded-xl border border-border",
       )}
     >
-      {samplingApplies ? (
-        <div className="pointer-events-none absolute left-3 top-12 z-[500] flex max-w-[min(calc(100%-6rem),20rem)] flex-col gap-1 [&_*]:pointer-events-auto">
-          <div
-            className="flex items-center gap-2 rounded-lg border border-border bg-card/95 px-2.5 py-1.5 shadow-md backdrop-blur-sm"
-            title={
-              showAllPins
-                ? "Drawing every pin can slow pan and zoom on large feeds."
-                : `Evenly spaced sample of up to ${maxPins.toLocaleString()} pins for smoother pan and zoom.`
-            }
-          >
-            <Switch
-              id="geo-points-show-all"
-              checked={showAllPins}
-              onCheckedChange={toggleShowAll}
-              aria-label={showAllPins ? "Use sampled pins for speed" : "Show all pins"}
-            />
-            <label htmlFor="geo-points-show-all" className="cursor-pointer text-xs font-medium leading-snug text-foreground">
-              {showAllPins ? "All pins (may lag)" : `Sample for speed (max ${maxPins.toLocaleString()})`}
-            </label>
-          </div>
-        </div>
-      ) : null}
       <MapContainer
         center={center}
         zoom={11}
@@ -238,51 +252,14 @@ export function GeoPointsMap({
         <MapViewSync onViewChange={onViewChange} />
         <FitBoundsOnce pts={pts} fitSignal={fitBoundsSignal} layoutRev={layoutRev} />
 
-        {sampled.map((l) => {
-          const lat = l.latitude!;
-          const lng = l.longitude!;
-          const stroke = colorForPurpose(l.purpose);
-          const r = clamp(3 + Math.log10((l.images?.length ?? 0) + 1) * 2.2, 3, 7);
-          const isSelected = selectedId != null && l.id === selectedId;
-          return (
-            <CircleMarker
-              key={l.id}
-              center={[lat, lng]}
-              radius={r}
-              pathOptions={{
-                color: stroke,
-                weight: isSelected ? 2.5 : 1,
-                fillColor: stroke,
-                fillOpacity: isSelected ? 0.9 : 0.65,
-              }}
-              eventHandlers={{
-                mouseover: () => onHoverListingIdChange?.(l.id),
-                mouseout: () => {
-                  onHoverListingIdChange?.(null);
-                  onHoverListingPosChange?.(null);
-                },
-                mousemove: (e) => {
-                  const pt = (e as { containerPoint?: { x: number; y: number } } | undefined)?.containerPoint;
-                  if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) onHoverListingPosChange?.({ x: pt.x, y: pt.y });
-                },
-                click: () => onSelectListingId?.(l.id),
-              }}
-            />
-          );
-        })}
+        <AllPinsLayer
+          listings={withCoords}
+          selectedId={selectedId}
+          handlers={{ onHover: onHoverListingIdChange, onHoverPos: onHoverListingPosChange, onSelect: onSelectListingId }}
+        />
       </MapContainer>
       <div className="absolute bottom-2 left-2 z-[500] max-w-[min(calc(100%-1rem),22rem)] rounded-lg border border-border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm">
-        {withCoords.length === sampled.length ? (
-          <span>
-            Showing all {withCoords.length.toLocaleString()} pin{withCoords.length === 1 ? "" : "s"}
-            {showAllPins && samplingApplies ? " — full set; map may feel slower" : ""}
-          </span>
-        ) : (
-          <span>
-            Showing {sampled.length.toLocaleString()} of {withCoords.length.toLocaleString()} pins (sampled) — use the
-            switch above for all pins
-          </span>
-        )}
+        Showing all {withCoords.length.toLocaleString()} pin{withCoords.length === 1 ? "" : "s"}
       </div>
     </div>
   );

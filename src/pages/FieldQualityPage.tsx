@@ -519,7 +519,7 @@ function FieldQualityBody({
     ];
     if (xmlEda.sampleSize > 0) {
       lines.push(
-        `Raw XML path scan: ${xmlEda.sampleSize} listings sampled, ${xmlEda.totalPathsDiscovered} distinct paths found, table shows ${xmlEda.pathsShown}${xmlEda.pathsTruncated ? ` (truncated from ${xmlEda.totalPathsDiscovered})` : ""}.`,
+        `Raw XML path scan: all ${xmlEda.sampleSize} listings scanned, ${xmlEda.totalPathsDiscovered} distinct paths found, table shows ${xmlEda.pathsShown}${xmlEda.pathsTruncated ? ` (truncated from ${xmlEda.totalPathsDiscovered})` : ""}.`,
       );
       if (xmlEda.listingsSkippedNoRawXml > 0) {
         lines.push(`${xmlEda.listingsSkippedNoRawXml} sampled rows had no raw XML stored.`);
@@ -1129,7 +1129,7 @@ function FieldQualityBody({
                   </div>
                   <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
                     <p>
-                      Sample: <span className="font-medium text-foreground">{xmlEda.sampleSize}</span> listings
+                      Scanned: all <span className="font-medium text-foreground">{xmlEda.sampleSize}</span> listings
                       {xmlEda.truncatedListings ? ` (of ${analyticsListings.length} in analysis scope)` : ""}. Skipped no raw XML:{" "}
                       <span className="font-medium text-foreground">{xmlEda.listingsSkippedNoRawXml}</span>. Distinct paths
                       found: <span className="font-medium text-foreground">{xmlEda.totalPathsDiscovered}</span>. Table shows{" "}
