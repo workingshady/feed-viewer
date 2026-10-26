@@ -1,3 +1,6 @@
+import { MarketBadge } from "@/components/MarketBadge";
+import { MARKETS } from "@/lib/markets";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,9 +29,14 @@ import { pct, timeAgo } from "./format";
 import { AgencyLogo } from "@/components/AgencyLogo";
 import { ShareDialog } from "@/components/ShareDialog";
 
+const AUTO = "auto";
+
 function SettingsPopover({ source }: { source: SourceDTO }) {
   const update = useUpdateSource();
+  const { sourceMarket } = useAppData();
+  const detected = sourceMarket(source);
   const [name, setName] = useState(source.name);
+  const [market, setMarket] = useState(source.market || AUTO);
   const [retain, setRetain] = useState(String(source.retainVersions));
   const retainNum = Number(retain);
   const valid = name.trim().length > 0 && Number.isInteger(retainNum) && retainNum >= 1 && retainNum <= 50;
@@ -45,6 +53,23 @@ function SettingsPopover({ source }: { source: SourceDTO }) {
           <Input id="source-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="source-market">Market</Label>
+          <Select value={market} onValueChange={setMarket}>
+            <SelectTrigger id="source-market">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={AUTO}>Auto-detect{detected ? ` (${MARKETS[detected].name})` : ""}</SelectItem>
+              {Object.values(MARKETS).map((m) => (
+                <SelectItem key={m.code} value={m.code}>
+                  {m.name} · {m.currency}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">Sets currency, map bounds, rent period and permit checks. Auto-detect reads the feed's country.</p>
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="retain">Keep last versions</Label>
           <Input id="retain" type="number" min={1} max={50} value={retain} onChange={(e) => setRetain(e.target.value)} />
           <p className="text-xs text-muted-foreground">Older unpinned versions are deleted automatically.</p>
@@ -53,7 +78,7 @@ function SettingsPopover({ source }: { source: SourceDTO }) {
           size="sm"
           className="w-full"
           disabled={!valid || update.isPending}
-          onClick={() => update.mutate({ source, name: name.trim(), retainVersions: retainNum })}
+          onClick={() => update.mutate({ source, name: name.trim(), retainVersions: retainNum, market: market === AUTO ? detected ?? "" : market })}
         >
           Save
         </Button>
@@ -169,7 +194,7 @@ export function SourceDetail({
   onUpload: () => void;
   onDeleted: () => void;
 }) {
-  const { sources, setScope } = useAppData();
+  const { sources, setScope, sourceMarket } = useAppData();
   const live = liveVersionOf(source);
   const health = healthOf(source);
   const reasons = healthReasons(source);
@@ -199,7 +224,10 @@ export function SourceDetail({
         <div className="flex items-start gap-3">
           <AgencyLogo src={info?.logo} name={source.name} className="h-11 w-11 shrink-0 border" />
           <div className="min-w-0 flex-1 space-y-1">
-            <h2 className="truncate text-xl font-bold leading-tight text-foreground">{source.name}</h2>
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="truncate text-xl font-bold leading-tight text-foreground">{source.name}</h2>
+              <MarketBadge code={sourceMarket(source)} withName detected={!source.market && !!sourceMarket(source)} />
+            </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <HealthDot health={health} withLabel />
               <span aria-hidden>·</span>

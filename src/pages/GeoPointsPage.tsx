@@ -1,3 +1,4 @@
+import { MARKETS, inMarketBounds, marketOf, type MarketCode } from "@/lib/markets";
 import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -424,62 +425,68 @@ const GeoPointsPage = () => {
   }, [baseFiltered]);
 
   const outlierModel = useMemo(() => {
-    const pts = withCoords.map((l) => ({ id: l.id, lat: l.latitude!, lng: l.longitude! }));
-    if (pts.length === 0) {
-      return {
-        outlierIds: new Set<string>(),
-        detailsById: new Map<string, { kmFromCenter: number; reasons: string[] }>(),
-        anomalies: { zeroZero: 0, duplicates: 0 },
-      };
-    }
-
-    // Robust center (median) is more stable than mean when there are extreme points.
-    const latMed = median(pts.map((p) => p.lat));
-    const lngMed = median(pts.map((p) => p.lng));
-    const latMad = mad(pts.map((p) => p.lat), latMed);
-    const lngMad = mad(pts.map((p) => p.lng), lngMed);
-    const center = { lat: latMed, lng: lngMed };
-
-    // Distance-based outliers around the robust center.
-    const d = pts.map((p) => ({ id: p.id, km: haversineKm(center, p) }));
-    const dMed = median(d.map((x) => x.km));
-    const dMad = mad(d.map((x) => x.km), dMed);
-    const distThreshold = dMad > 0 ? dMed + 7 * dMad : Math.max(25, dMed * 4);
-
-    // Duplicate coordinate clusters (rounded) are usually placeholders / defaults.
-    const coordKey = (p: { lat: number; lng: number }) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
-    const coordCounts = new Map<string, number>();
-    for (const p of pts) coordCounts.set(coordKey(p), (coordCounts.get(coordKey(p)) ?? 0) + 1);
-
     const outlierIds = new Set<string>();
     const detailsById = new Map<string, { kmFromCenter: number; reasons: string[] }>();
     let zeroZero = 0;
     let duplicates = 0;
 
-    for (const p of pts) {
-      const reasons: string[] = [];
-      const kmFromCenter = haversineKm(center, p);
+    // Duplicate coordinate clusters (rounded) are usually placeholders / defaults.
+    const coordKey = (p: { lat: number; lng: number }) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+    const coordCounts = new Map<string, number>();
+    for (const l of withCoords) {
+      const k = coordKey({ lat: l.latitude!, lng: l.longitude! });
+      coordCounts.set(k, (coordCounts.get(k) ?? 0) + 1);
+    }
 
-      if (Math.abs(p.lat) < 1e-9 && Math.abs(p.lng) < 1e-9) {
-        reasons.push("Coords are (0,0) — placeholder");
-        zeroZero += 1;
+    // Each market has its own cluster: centre and spread are measured within a market, so a
+    // Singapore listing is never an "outlier" just because the workspace is mostly UAE.
+    const byMarket = new Map<string, Listing[]>();
+    for (const l of withCoords) {
+      const code = marketOf(l).code;
+      const arr = byMarket.get(code);
+      if (arr) arr.push(l);
+      else byMarket.set(code, [l]);
+    }
+
+    for (const [code, group] of byMarket) {
+      const market = MARKETS[code as MarketCode];
+      const pts = group.map((l) => ({ id: l.id, lat: l.latitude!, lng: l.longitude! }));
+      // Robust centre (median) from the pins inside the market's box, so stray pins don't drag it.
+      const inside = pts.filter((p) => inMarketBounds(market, p.lat, p.lng));
+      const basis = inside.length ? inside : pts;
+      const latMed = median(basis.map((p) => p.lat));
+      const lngMed = median(basis.map((p) => p.lng));
+      const latMad = mad(basis.map((p) => p.lat), latMed);
+      const lngMad = mad(basis.map((p) => p.lng), lngMed);
+      const center = { lat: latMed, lng: lngMed };
+      const dists = basis.map((p) => haversineKm(center, p));
+      const dMed = median(dists);
+      const dMad = mad(dists, dMed);
+      const distThreshold = dMad > 0 ? dMed + 7 * dMad : Math.max(25, dMed * 4);
+
+      for (const p of pts) {
+        const reasons: string[] = [];
+        const kmFromCenter = haversineKm(center, p);
+        if (Math.abs(p.lat) < 1e-9 && Math.abs(p.lng) < 1e-9) {
+          reasons.push("Coords are (0,0) — placeholder");
+          zeroZero += 1;
+        } else if (!inMarketBounds(market, p.lat, p.lng)) {
+          reasons.push(`Outside ${market.name} — Ziba re-geocodes it from the address`);
+        }
+        const c = coordCounts.get(coordKey(p)) ?? 1;
+        if (c >= 10) {
+          reasons.push(`Repeated coordinates (${c} listings) — likely default`);
+          duplicates += 1;
+        }
+        const zLat = Math.abs(modifiedZ(p.lat, latMed, latMad));
+        const zLng = Math.abs(modifiedZ(p.lng, lngMed, lngMad));
+        if (zLat >= 10 || zLng >= 10) reasons.push("Lat/lng far from typical range");
+        if (kmFromCenter > distThreshold) reasons.push(`Far from the ${market.name} cluster (${kmFromCenter.toFixed(1)} km)`);
+
+        const isOutlier = reasons.some((r) => r.startsWith("Coords are (0,0)") || r.startsWith("Outside ") || r.startsWith("Far from the") || r === "Lat/lng far from typical range");
+        if (isOutlier) outlierIds.add(p.id);
+        if (reasons.length > 0) detailsById.set(p.id, { kmFromCenter, reasons });
       }
-
-      const c = coordCounts.get(coordKey(p)) ?? 1;
-      if (c >= 10) {
-        reasons.push(`Repeated coordinates (${c} listings) — likely default`);
-        duplicates += 1;
-      }
-
-      const zLat = Math.abs(modifiedZ(p.lat, latMed, latMad));
-      const zLng = Math.abs(modifiedZ(p.lng, lngMed, lngMad));
-      if (zLat >= 10 || zLng >= 10) reasons.push("Lat/lng far from typical range");
-
-      if (kmFromCenter > distThreshold) reasons.push(`Far from main cluster (${kmFromCenter.toFixed(1)} km)`);
-
-      const isOutlier = reasons.some((r) => r.startsWith("Coords are (0,0)") || r.startsWith("Far from main cluster") || r === "Lat/lng far from typical range");
-      if (isOutlier) outlierIds.add(p.id);
-      if (reasons.length > 0) detailsById.set(p.id, { kmFromCenter, reasons });
     }
 
     return { outlierIds, detailsById, anomalies: { zeroZero, duplicates } };

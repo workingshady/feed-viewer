@@ -14,15 +14,19 @@ const sourceInclude = {
 } as const satisfies Prisma.SourceInclude;
 
 const json = z.custom<Prisma.InputJsonValue>((v) => v !== undefined);
+/** Market codes mirror src/lib/markets.ts; "" = not set (detected from the data). */
+const market = z.enum(["", "AE", "MY", "SG", "PK"]);
 
 const createSourceSchema = z.object({
   name: z.string().trim().min(1).max(120),
   agencyName: z.string().trim().max(200).default(""),
   agencyInfo: json.optional(),
+  market: market.default(""),
 });
 
 const updateSourceSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  market: market.optional(),
   mapping: json.nullable().optional(),
   retainVersions: z.number().int().min(1).max(50).optional(),
 });
@@ -41,6 +45,8 @@ const registerVersionSchema = z.object({
   changed: z.number().int().min(0).default(0),
   warnings: json.optional(),
   stats: json.optional(),
+  /** Market detected from this file; sets the source's market when it has none yet. */
+  market: market.optional(),
   apply: z.enum(["auto", "never"]).default("auto"),
 });
 
@@ -87,7 +93,7 @@ export function sourcesRouter(blobStore: BlobStore) {
       const body = createSourceSchema.parse(req.body);
       try {
         const created = await prisma.source.create({
-          data: { name: body.name, agencyName: body.agencyName, agencyInfo: body.agencyInfo },
+          data: { name: body.name, agencyName: body.agencyName, agencyInfo: body.agencyInfo, market: body.market },
         });
         await recordAudit(req.user!.id, "source.create", "source", created.id, { name: created.name });
         res.status(201).json({ source: await loadSource(created.id) });
@@ -108,6 +114,7 @@ export function sourcesRouter(blobStore: BlobStore) {
           where: { id: req.params.id },
           data: {
             name: body.name,
+            market: body.market,
             retainVersions: body.retainVersions,
             mapping: body.mapping === null ? Prisma.DbNull : body.mapping,
           },
@@ -176,12 +183,16 @@ export function sourcesRouter(blobStore: BlobStore) {
       try {
         version = await prisma.$transaction(async (tx) => {
           const max = await tx.feedVersion.aggregate({ where: { sourceId: source.id }, _max: { number: true } });
-          const { apply: _apply, ...data } = body;
+          const { apply: _apply, market: fileMarket, ...data } = body;
           const created = await tx.feedVersion.create({
             data: { ...data, sourceId: source.id, number: (max._max.number ?? 0) + 1, createdById: req.user!.id },
             include: versionInclude,
           });
-          if (applied) await tx.source.update({ where: { id: source.id }, data: { activeVersionId: created.id } });
+          // The first file with a recognised market sets the source's market (never overwrites a chosen one).
+          const setMarket = !source.market && fileMarket ? { market: fileMarket } : {};
+          if (applied || setMarket.market) {
+            await tx.source.update({ where: { id: source.id }, data: { ...(applied ? { activeVersionId: created.id } : {}), ...setMarket } });
+          }
           return created;
         });
       } catch (e) {

@@ -1,3 +1,4 @@
+import { marketOf } from "@/lib/markets";
 import type { Listing } from "@/lib/types";
 import { jaccard, mediaKey, metresBetween, textKey, wordSet } from "@/lib/listingChanges";
 import { MATCH_WEIGHTS, type WeightTable } from "@/lib/propertyMatchWeights";
@@ -70,6 +71,8 @@ export type Prepared = {
   listing: Listing;
   /** Caller's group (agency, version side…); pairs inside one group can be skipped. */
   group: string;
+  /** Market code (AE, SG, MY, PK): listings in different countries are never the same property. */
+  market: string;
   permit: string;
   purpose: string;
   type: string;
@@ -192,6 +195,7 @@ export function prepareListings(groups: { group: string; listings: Listing[] }[]
     return {
       listing: l,
       group: g,
+      market: marketOf(l).code,
       // One feed using a permit on many listings means a company/project number, not a unit's permit.
       permit: validPermit(permit) && (permitDf.get(`${g}|${permit}`) ?? 0) <= MAX_SHARED ? permit : "",
       purpose: l.purpose === "sale" || l.purpose === "rent" ? l.purpose : "",
@@ -411,7 +415,7 @@ export function candidatePairs(items: Prepared[], include: (a: Prepared, b: Prep
     if (h < 2) continue;
     const i = Math.floor(key / n);
     const j = key - i * n;
-    if (include(items[i], items[j])) out.push([i, j]);
+    if (items[i].market === items[j].market && include(items[i], items[j])) out.push([i, j]);
   }
   return out;
 }

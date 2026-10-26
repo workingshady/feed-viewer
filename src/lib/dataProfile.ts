@@ -102,10 +102,29 @@ function tukey(values: number[], log: boolean): { lo: number; hi: number } {
   return log ? { lo: Math.exp(lo), hi: Math.exp(hi) } : { lo, hi };
 }
 
-function numericStats(values: number[], log: boolean): NumericStats | null {
+/**
+ * Distribution of a numeric field. Outliers are judged within each group (market + purpose for
+ * prices, market for sizes), so a feed mixing countries or sale and rent doesn't flag whole groups.
+ */
+function numericStats(values: number[], log: boolean, groups?: string[]): NumericStats | null {
   if (!values.length) return null;
   const s = [...values].sort((a, b) => a - b);
-  const f = tukey(values, log);
+  let outliers = 0;
+  if (groups) {
+    const byGroup = new Map<string, number[]>();
+    values.forEach((v, i) => {
+      const arr = byGroup.get(groups[i]);
+      if (arr) arr.push(v);
+      else byGroup.set(groups[i], [v]);
+    });
+    for (const g of byGroup.values()) {
+      const f = tukey(g, log);
+      outliers += g.filter((x) => x < f.lo || x > f.hi).length;
+    }
+  } else {
+    const f = tukey(values, log);
+    outliers = values.filter((x) => x < f.lo || x > f.hi).length;
+  }
   return {
     min: s[0],
     p5: quantile(s, 0.05),
@@ -115,7 +134,7 @@ function numericStats(values: number[], log: boolean): NumericStats | null {
     p95: quantile(s, 0.95),
     max: s[s.length - 1],
     mean: s.reduce((n, x) => n + x, 0) / s.length,
-    outliers: values.filter((x) => x < f.lo || x > f.hi).length,
+    outliers,
   };
 }
 
@@ -175,7 +194,7 @@ type Ctx = {
 
 const fmt = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n).toLocaleString() : String(Math.round(n * 100) / 100));
 const isUrl = (u: string) => /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(u.trim());
-const ppsfKey = (l: Listing) => `${(l.currency || "").toUpperCase()}|${l.purpose}|${(l.propertyType || "").toLowerCase()}`;
+const ppsfKey = (l: Listing) => `${marketOf(l).code}|${(l.currency || "").toUpperCase()}|${l.purpose}|${(l.propertyType || "").toLowerCase()}`;
 const contentKey = (l: Listing) => `${(l.title || "").trim().toLowerCase()}|${l.price}|${(l.community || "").toLowerCase()}|${l.beds}|${Math.round(l.area || 0)}`;
 
 const RULES: Rule[] = [
@@ -428,7 +447,7 @@ const RULES: Rule[] = [
     severity: "warning",
     field: "price",
     title: "Price per sqft far from similar listings",
-    hint: "Compared within the same purpose and property type (Tukey fences on a log scale). Often a wrong price, size or period.",
+    hint: "Compared within the same market, currency, purpose and property type (Tukey fences on a log scale). Often a wrong price, size or period.",
     test: (l, c) => {
       if (!(l.price > 0 && l.area > 0)) return null;
       const f = c.ppsfFences.get(ppsfKey(l));
@@ -532,6 +551,7 @@ export function profileListings(listings: Listing[]): DataProfile {
     const counts = new Map<string, number>();
     const patterns = new Map<string, { count: number; example: string }>();
     const nums: number[] = [];
+    const numGroups: string[] = [];
     const lens: number[] = [];
     for (const l of listings) {
       if (!isListingFieldFilled(l, key)) continue;
@@ -542,7 +562,10 @@ export function profileListings(listings: Listing[]): DataProfile {
       counts.set(v, (counts.get(v) ?? 0) + 1);
       if (NUMERIC.has(key)) {
         const x = Number(l[key]);
-        if (Number.isFinite(x)) nums.push(x);
+        if (Number.isFinite(x)) {
+          nums.push(x);
+          numGroups.push(key === "price" || key === "serviceCharge" || key === "downPaymentPrice" ? `${marketOf(l).code}|${l.purpose}` : marketOf(l).code);
+        }
       } else if (!LIST_LIKE.has(key) && key !== "agent") {
         lens.push(v.length);
         if (!TEXT_LONG.has(key)) {
@@ -580,7 +603,7 @@ export function profileListings(listings: Listing[]): DataProfile {
       uniqueness: filled ? counts.size / filled : 0,
       top: [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([value, count]) => ({ value, count })),
       patterns: [...patterns.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 8).map(([pattern, e]) => ({ pattern, count: e.count, example: e.example })),
-      numeric: NUMERIC.has(key) ? numericStats(nums, LOG_SCALE.has(key)) : null,
+      numeric: NUMERIC.has(key) ? numericStats(nums, LOG_SCALE.has(key), numGroups) : null,
       length: sortedLens.length ? { min: sortedLens[0], median: quantile(sortedLens, 0.5), max: sortedLens[sortedLens.length - 1] } : null,
       placeholders,
       kind,

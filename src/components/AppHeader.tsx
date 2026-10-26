@@ -1,3 +1,5 @@
+import { MarketBadge, MarketSwitcher } from "@/components/MarketBadge";
+import { MARKETS } from "@/lib/markets";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -46,7 +48,7 @@ const iconBtn =
   "touch-manipulation flex items-center justify-center min-h-[44px] min-w-[44px] rounded-xl transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent";
 
 function ScopeSwitcher({ className }: { className?: string }) {
-  const { sources, scope, setScope } = useAppData();
+  const { sources, scope, setScope, market, sourceMarket } = useAppData();
   if (sources.length === 0) return null;
   const value = scope.mode === "agency" ? `agency:${scope.agencyName}` : "all";
   return (
@@ -60,10 +62,13 @@ function ScopeSwitcher({ className }: { className?: string }) {
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="all">All sources</SelectItem>
+        <SelectItem value="all">{market === "all" ? "All sources" : `All ${MARKETS[market].name} sources`}</SelectItem>
         {sources.map((s) => (
           <SelectItem key={s.id} value={`agency:${s.name}`}>
-            {s.name}
+            <span className="flex items-center gap-2">
+              {s.name}
+              {market === "all" && <MarketBadge code={sourceMarket(s)} />}
+            </span>
           </SelectItem>
         ))}
       </SelectContent>
@@ -187,6 +192,7 @@ const AppHeader = () => {
 
           {/* Right side */}
           <div className="flex items-center gap-1.5 lg:gap-2 shrink-0">
+            {user && <MarketSwitcher className="hidden md:flex w-auto max-w-[11rem]" />}
             {user && <ScopeSwitcher className="hidden md:flex w-36 lg:w-44" />}
 
             <button
@@ -302,6 +308,7 @@ const AppHeader = () => {
               aria-label="Main"
               className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain py-3 px-3 flex flex-col gap-4 touch-pan-y"
             >
+              {user && <MarketSwitcher className="w-full" />}
               {user && <ScopeSwitcher className="w-full" />}
               <div className="flex flex-col gap-0.5">
                 {topNav.map((item) => (

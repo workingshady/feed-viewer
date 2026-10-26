@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 
 /**
  * Scatter plot drawn on a canvas so every point is plotted — tens of thousands of listings — with
@@ -60,6 +61,7 @@ export function CanvasScatter<T extends Record<string, string | number>>({
   const [width, setWidth] = useState(0);
   const [theme, setTheme] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
+  const [mode, setMode] = useState<"all" | "sampled">("all");
 
   // Redraw on resize and on light/dark switches (colours are read from CSS variables).
   useEffect(() => {
@@ -118,18 +120,33 @@ export function CanvasScatter<T extends Record<string, string | number>>({
     };
   }, [pts, width, height, log]);
 
+  /**
+   * Sampled view: one point per 3×3-pixel cell. Points hidden under another point are dropped, but
+   * every visible position — outliers included — stays, so the shape is the same as the full plot.
+   */
+  const shown = useMemo(() => {
+    if (mode === "all" || !scale) return pts;
+    const seen = new Set<string>();
+    return pts.filter((p) => {
+      const k = `${Math.round(scale.px(p.x) / 3)}|${Math.round(scale.py(p.y) / 3)}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [pts, scale, mode]);
+
   /** Pixel grid of point indexes for nearest-point hover. */
   const grid = useMemo(() => {
     const g = new Map<string, number[]>();
     if (!scale) return g;
-    pts.forEach((p, k) => {
+    shown.forEach((p, k) => {
       const key = `${Math.floor(scale.px(p.x) / HIT_PX)}|${Math.floor(scale.py(p.y) / HIT_PX)}`;
       const cell = g.get(key);
       if (cell) cell.push(k);
       else g.set(key, [k]);
     });
     return g;
-  }, [pts, scale]);
+  }, [shown, scale]);
 
   useEffect(() => {
     const c = canvas.current;
@@ -173,12 +190,12 @@ export function CanvasScatter<T extends Record<string, string | number>>({
     ctx.textBaseline = "bottom";
     ctx.fillText(x.label, M.left + scale.w / 2, height - 2);
     // Transparency grows with the point count so dense areas read as darker, not as a solid blob.
-    const n = pts.length;
+    const n = shown.length;
     ctx.globalAlpha = Math.max(0.12, Math.min(0.6, 0.6 * Math.sqrt(800 / Math.max(n, 1))));
     ctx.fillStyle = fill;
     const r = n > 8000 ? 1.8 : n > 2000 ? 2.4 : 3.2;
     ctx.beginPath();
-    for (const p of pts) {
+    for (const p of shown) {
       const X = scale.px(p.x);
       const Y = scale.py(p.y);
       ctx.moveTo(X + r, Y);
@@ -186,8 +203,8 @@ export function CanvasScatter<T extends Record<string, string | number>>({
     }
     ctx.fill();
     ctx.globalAlpha = 1;
-    if (hover != null && pts[hover]) {
-      const p = pts[hover];
+    if (hover != null && shown[hover]) {
+      const p = shown[hover];
       ctx.beginPath();
       ctx.arc(scale.px(p.x), scale.py(p.y), 5, 0, Math.PI * 2);
       ctx.fillStyle = fill;
@@ -196,7 +213,7 @@ export function CanvasScatter<T extends Record<string, string | number>>({
       ctx.strokeStyle = resolve(pr, "hsl(var(--card))");
       ctx.stroke();
     }
-  }, [scale, pts, width, height, color, hover, theme, x.label, xf, yf]);
+  }, [scale, shown, width, height, color, hover, theme, x.label, xf, yf]);
 
   const nearest = (e: React.MouseEvent<HTMLCanvasElement>): number | null => {
     if (!scale) return null;
@@ -210,7 +227,7 @@ export function CanvasScatter<T extends Record<string, string | number>>({
     for (let dx = -1; dx <= 1; dx++)
       for (let dy = -1; dy <= 1; dy++)
         for (const k of grid.get(`${cx + dx}|${cy + dy}`) ?? []) {
-          const p = pts[k];
+          const p = shown[k];
           const d = (scale.px(p.x) - mx) ** 2 + (scale.py(p.y) - my) ** 2;
           if (d <= bestD) {
             bestD = d;
@@ -220,9 +237,32 @@ export function CanvasScatter<T extends Record<string, string | number>>({
     return best;
   };
 
-  const hp = hover != null ? pts[hover] : null;
+  const hp = hover != null ? shown[hover] : null;
   const row = hp ? data[hp.i] : null;
   return (
+    <div className="space-y-1.5">
+    <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+      <span>
+        {mode === "all" ? `All ${pts.length.toLocaleString()} points` : `${shown.length.toLocaleString()} of ${pts.length.toLocaleString()} points (overlaps thinned; every outlier kept)`}
+      </span>
+      <div role="radiogroup" aria-label="Points shown" className="inline-flex rounded-md border p-0.5">
+        {(["all", "sampled"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            role="radio"
+            aria-checked={mode === m}
+            onClick={() => {
+              setHover(null);
+              setMode(m);
+            }}
+            className={cn("rounded px-2 py-0.5", mode === m ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
+          >
+            {m === "all" ? "All points" : "Sampled"}
+          </button>
+        ))}
+      </div>
+    </div>
     <div ref={wrap} className="relative w-full" style={{ height }}>
       <span ref={probe} className="hidden" aria-hidden />
       <canvas
@@ -234,7 +274,7 @@ export function CanvasScatter<T extends Record<string, string | number>>({
         onMouseLeave={() => setHover(null)}
         onClick={(e) => {
           const k = nearest(e);
-          if (k != null && onSelect) onSelect(data[pts[k].i]);
+          if (k != null && onSelect) onSelect(data[shown[k].i]);
         }}
       />
       {row && scale && hp && (
@@ -251,6 +291,7 @@ export function CanvasScatter<T extends Record<string, string | number>>({
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

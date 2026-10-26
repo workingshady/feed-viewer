@@ -1,3 +1,4 @@
+import { MarketBadge } from "@/components/MarketBadge";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Database, FileStack, Gauge, HardDrive, Loader2, Upload } from "lucide-react";
@@ -56,7 +57,7 @@ function Kpi({
 }
 
 export default function SourcesPage() {
-  const { sources, isLoading } = useAppData();
+  const { sources, allSources, isLoading, market, setMarket } = useAppData();
   const { user } = useAuth();
   const canEdit = hasRole(user?.role, "editor");
   const isAdmin = hasRole(user?.role, "admin");
@@ -94,7 +95,7 @@ export default function SourcesPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {isAdmin && sources.length > 0 && <ClearAllButton sources={sources} onCleared={() => select(null)} />}
+            {isAdmin && allSources.length > 0 && <ClearAllButton sources={allSources} onCleared={() => select(null)} />}
             {canEdit && (
               <Button onClick={() => setUpload({ open: true, fixed: false })}>
                 <Upload className="mr-1.5 h-4 w-4" /> Upload feeds
@@ -102,6 +103,18 @@ export default function SourcesPage() {
             )}
           </div>
         </div>
+
+        {market !== "all" && allSources.length > sources.length && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-4 py-2.5 text-sm">
+            <MarketBadge code={market} withName />
+            <span className="text-muted-foreground">
+              Showing {sources.length} of {allSources.length} sources. Other markets are hidden by the market filter in the header.
+            </span>
+            <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={() => setMarket("all")}>
+              Show all markets
+            </Button>
+          </div>
+        )}
 
         {isLoading && sources.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
@@ -170,7 +183,7 @@ export default function SourcesPage() {
       <UploadDialog
         open={upload.open}
         onOpenChange={(open) => setUpload((u) => ({ ...u, open }))}
-        sources={sources}
+        sources={allSources}
         fixedSource={upload.fixed ? selected : null}
         onDone={(id) => select(id)}
       />

@@ -1,3 +1,4 @@
+import { MarketBadge } from "@/components/MarketBadge";
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FileUp, Loader2, XCircle } from "lucide-react";
@@ -8,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { applyVersion, listSources, type RegisterResult, type SourceDTO } from "@/lib/sourcesApi";
-import { STAGE_LABELS, commitVersion, prepareVersion, type PreparedVersion, type UploadStage } from "@/lib/uploadVersion";
+import { STAGE_LABELS, commitVersion, prepareVersion, type PreparedVersion, type UploadStage, fileMarket } from "@/lib/uploadVersion";
 import { Progress } from "@/components/ui/progress";
 import { diffCounts } from "@/lib/versionDiff";
 import { SOURCES_KEY } from "@/hooks/useSources";
@@ -250,6 +251,7 @@ export function UploadDialog({
                 {row.prepared && row.status === "ready" && (
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <MarketBadge code={fileMarket(row.prepared)} withName />
                       <span>{row.prepared.result.listings.length.toLocaleString()} listings</span>
                       <span className="inline-flex items-center gap-1">
                         Quality <ScoreBadge score={row.prepared.stats.score} />

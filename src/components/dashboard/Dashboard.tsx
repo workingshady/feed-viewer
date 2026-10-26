@@ -214,7 +214,7 @@ function NewestListings({ listings }: { listings: Listing[] }) {
 /** Signed-in home: what's live, what changed, what needs attention. */
 export function Dashboard() {
   const { user } = useAuth();
-  const { sources, listings, isLoading } = useAppData();
+  const { sources, allSources, listings, isLoading } = useAppData();
   const canEdit = hasRole(user?.role, "editor");
   const [uploadOpen, setUploadOpen] = useState(false);
 
@@ -240,7 +240,7 @@ export function Dashboard() {
           canEdit={canEdit}
           onUpload={() => setUploadOpen(true)}
         />
-        <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} sources={sources} />
+        <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} sources={allSources} />
 
         {isLoading && listings.length === 0 ? (
           <p className="flex items-center justify-center gap-2 py-24 text-muted-foreground">

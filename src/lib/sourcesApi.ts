@@ -37,6 +37,8 @@ export type SourceDTO = {
   name: string;
   agencyName: string;
   agencyInfo: ImportResult["agencyInfo"] | null;
+  /** Market code (AE, MY, SG, PK); "" until detected (see sourceMarket()). */
+  market?: string;
   mapping: MappingConfig | null;
   activeVersionId: string | null;
   retainVersions: number;
@@ -61,7 +63,7 @@ export type RegisterVersionBody = Pick<
   | "changed"
   | "warnings"
   | "stats"
-> & { apply?: "auto" | "never" };
+> & { apply?: "auto" | "never"; /** Market detected from the file. */ market?: string };
 
 export type RegisterResult = {
   version: VersionDTO;
@@ -76,12 +78,12 @@ export const liveVersionOf = (s: SourceDTO): VersionDTO | null =>
 
 export const listSources = () => apiFetch<{ sources: SourceDTO[] }>("/api/sources").then((r) => r.sources);
 
-export const createSource = (body: { name: string; agencyName: string; agencyInfo?: SourceDTO["agencyInfo"] }) =>
+export const createSource = (body: { name: string; agencyName: string; agencyInfo?: SourceDTO["agencyInfo"]; market?: string }) =>
   apiFetch<{ source: SourceDTO }>("/api/sources", { method: "POST", ...jsonBody(body) }).then((r) => r.source);
 
 export const updateSource = (
   id: string,
-  body: { name?: string; mapping?: MappingConfig | null; retainVersions?: number },
+  body: { name?: string; market?: string; mapping?: MappingConfig | null; retainVersions?: number },
 ) =>
   apiFetch<{ source: SourceDTO }>(`/api/sources/${id}`, { method: "PATCH", ...jsonBody(body) }).then((r) => r.source);
 

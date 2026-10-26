@@ -115,8 +115,8 @@ export const useUpdateVersion = () =>
 
 export const useUpdateSource = () =>
   useSourcesMutation(
-    (a: { source: SourceDTO; name?: string; mapping?: SourceDTO["mapping"]; retainVersions?: number }) =>
-      updateSource(a.source.id, { name: a.name, mapping: a.mapping, retainVersions: a.retainVersions }),
+    (a: { source: SourceDTO; name?: string; market?: string; mapping?: SourceDTO["mapping"]; retainVersions?: number }) =>
+      updateSource(a.source.id, { name: a.name, market: a.market, mapping: a.mapping, retainVersions: a.retainVersions }),
     () => "Source updated",
   );
 

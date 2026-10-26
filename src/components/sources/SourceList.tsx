@@ -1,3 +1,5 @@
+import { MarketBadge } from "@/components/MarketBadge";
+import { useAppData } from "@/providers/useAppData";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Line, LineChart, ResponsiveContainer } from "recharts";
 import { Search } from "lucide-react";
@@ -53,6 +55,7 @@ export function SourceList({
   filter: HealthFilter;
   onFilterChange: (f: HealthFilter) => void;
 }) {
+  const { sourceMarket } = useAppData();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort>("updated");
   const listRef = useRef<HTMLUListElement>(null);
@@ -161,7 +164,10 @@ export function SourceList({
             >
               <HealthDot health={health} />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-foreground">{s.name}</div>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-sm font-semibold text-foreground">{s.name}</span>
+                  <MarketBadge code={sourceMarket(s)} detected={!s.market && !!sourceMarket(s)} />
+                </div>
                 <div className="truncate text-xs text-muted-foreground">
                   {live ? (
                     <>

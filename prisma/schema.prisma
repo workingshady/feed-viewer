@@ -61,6 +61,8 @@ model Source {
   name            String        @unique
   agencyName      String
   agencyInfo      Json?
+  /// Market code (AE, MY, SG, PK); "" until detected from the source's feeds.
+  market          String        @default("")
   /// MappingConfig used to parse this source's feeds; null = auto-detect.
   mapping         Json?
   activeVersionId String?       @unique
@@ -70,6 +72,8 @@ model Source {
   updatedAt       DateTime      @updatedAt
   versions        FeedVersion[] @relation("SourceVersions")
   shares          ShareLink[]
+
+  @@index([market])
 }
 
 model FeedVersion {

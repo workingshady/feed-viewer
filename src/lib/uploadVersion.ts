@@ -1,3 +1,4 @@
+import { dominantMarket } from "@/lib/markets";
 import { nanoid } from "nanoid";
 import { PARSER_VERSION, parseXmlStringAsync } from "@/lib/xmlParser";
 import { fingerprintMappingConfig } from "@/lib/mappingFingerprint";
@@ -182,6 +183,12 @@ export async function prepareVersion(
   };
 }
 
+/** The file's market: its <metadata> country, else the market most of its listings belong to. */
+export function fileMarket(p: Pick<PreparedVersion, "result">): string {
+  if (p.result.market) return p.result.market;
+  return p.result.listings.length ? dominantMarket(p.result.listings).code : "";
+}
+
 export type CommitTarget = SourceDTO | { create: { name: string } };
 
 export type CommitDeps = {
@@ -208,6 +215,7 @@ export async function commitVersion(
           name: target.create.name,
           agencyName: p.result.agencyInfo?.name ?? "",
           agencyInfo: p.result.agencyInfo ?? null,
+          market: fileMarket(p),
         })
       : target;
 
@@ -252,6 +260,7 @@ export async function commitVersion(
         checks: { gate: p.checks.gate, issues: p.checks.issues, rentPeriods: p.checks.rentPeriods },
       },
       stats: p.stats,
+      market: fileMarket(p),
       apply,
     });
     return { ...res, source };
