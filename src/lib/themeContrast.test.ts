@@ -102,6 +102,11 @@ const PAIRS: ReadonlyArray<readonly [fg: string, bg: string]> = [
   ["--sidebar-foreground", "--sidebar-background"],
   ["--sidebar-primary-foreground", "--sidebar-primary"],
   ["--on-media", "--primary"],
+  ["--highlight", "--background"],
+  ["--highlight", "--card"],
+  ["--highlight-fill-foreground", "--highlight-fill"],
+  ["--nav-active-fg", "--background"],
+  ["--on-media", "--footer-brand"],
 ];
 
 describe.each([

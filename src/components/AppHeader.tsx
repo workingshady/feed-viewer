@@ -25,32 +25,25 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/providers/AuthProvider";
 import { useAppData } from "@/providers/DataProvider";
 import { ChevronDown, LogIn, LogOut, Menu, Search, UserCircle, UserPlus, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { BrandLogo, BrandMark } from "@/components/BrandLogo";
 import { useSignupStatus } from "@/hooks/useSignupStatus";
 
-/** Same surface as `HomeSectionNav` outer bar — one glass recipe site-wide */
+/** One glass recipe site-wide; colours come from the `--header-*` theme tokens. */
 const HEADER_GLASS =
-  "border-b border-white/[0.07] bg-[#080808]/95 supports-[backdrop-filter]:backdrop-blur-md supports-[backdrop-filter]:bg-[#080808]/88 shadow-[0_12px_40px_-20px_rgba(0,0,0,0.85)]";
+  "border-b border-[hsl(var(--header-border))] bg-[hsl(var(--header-bg))] supports-[backdrop-filter]:backdrop-blur-md supports-[backdrop-filter]:backdrop-saturate-150 shadow-[var(--header-shadow)]";
 
-const navPill = (opts: { hero: boolean; active: boolean }) =>
+const navPill = (active: boolean) =>
   cn(
     "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-    opts.hero
-      ? opts.active
-        ? "bg-white/20 text-white shadow-sm"
-        : "text-white/85 hover:text-white hover:bg-white/10"
-      : opts.active
-        ? "bg-primary text-primary-foreground shadow-md"
-        : "text-muted-foreground hover:text-foreground hover:bg-accent",
+    active
+      ? "bg-[hsl(var(--nav-active-bg))] text-[hsl(var(--nav-active-fg))] ring-1 ring-inset ring-[hsl(var(--nav-active-ring))] font-semibold dark:font-medium dark:shadow-md"
+      : "text-muted-foreground hover:text-foreground hover:bg-accent",
   );
 
-const iconBtn = (hero: boolean) =>
-  cn(
-    "touch-manipulation flex items-center justify-center min-h-[44px] min-w-[44px] rounded-xl transition-colors shrink-0",
-    hero ? "text-white/90 hover:text-white hover:bg-white/10" : "text-muted-foreground hover:text-foreground hover:bg-accent",
-  );
+const iconBtn =
+  "touch-manipulation flex items-center justify-center min-h-[44px] min-w-[44px] rounded-xl transition-colors shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent";
 
 function ScopeSwitcher({ className }: { className?: string }) {
   const { sources, scope, setScope } = useAppData();
@@ -78,12 +71,12 @@ function ScopeSwitcher({ className }: { className?: string }) {
   );
 }
 
-function GroupMenu({ group, pathname, hero }: { group: NavGroup; pathname: string; hero: boolean }) {
+function GroupMenu({ group, pathname }: { group: NavGroup; pathname: string }) {
   const active = isGroupActive(pathname, group);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className={cn("group", navPill({ hero, active }))} data-active={active || undefined}>
+        <button type="button" className={cn("group", navPill(active))} data-active={active || undefined}>
           {group.heading}
           <ChevronDown
             className="w-3 h-3 transition-transform duration-200 group-data-[state=open]:rotate-180"
@@ -116,7 +109,9 @@ function DrawerLink({ item, pathname }: { item: NavItem; pathname: string }) {
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex items-center gap-3 rounded-xl px-3 min-h-[44px] text-sm font-medium transition-colors",
-        active ? "bg-primary text-primary-foreground" : "text-foreground hover:bg-accent",
+        active
+          ? "bg-[hsl(var(--nav-active-bg))] text-[hsl(var(--nav-active-fg))] ring-1 ring-inset ring-[hsl(var(--nav-active-ring))] font-semibold dark:font-medium"
+          : "text-foreground hover:bg-accent",
       )}
     >
       <item.icon className="w-4 h-4 shrink-0" aria-hidden />
@@ -129,34 +124,6 @@ const AppHeader = () => {
   const { pathname } = useLocation();
   const { user, logout, isLoading } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
-  const scrolledRef = useRef(false);
-
-  /** rAF + hysteresis: avoids setState every scroll event and flutter around the hero fold */
-  useEffect(() => {
-    scrolledRef.current = window.scrollY > 20;
-    setScrolled(scrolledRef.current);
-    let raf = 0;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        const y = window.scrollY;
-        let next = scrolledRef.current;
-        if (!next && y > 28) next = true;
-        else if (next && y < 6) next = false;
-        if (next !== scrolledRef.current) {
-          scrolledRef.current = next;
-          setScrolled(next);
-        }
-      });
-    };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, []);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -167,9 +134,8 @@ const AppHeader = () => {
   const groups = useMemo(() => (user ? visibleNavGroups(role) : []), [user, role]);
   const accountItems = useMemo(() => (user ? userMenuItems(role) : []), [user, role]);
 
-  // Only the signed-out landing page has a full-bleed hero under a transparent, fixed header.
+  // Only the signed-out landing page has a full-bleed hero under a fixed header.
   const isHome = pathname === "/" && !user && !isLoading;
-  const hero = isHome && !scrolled;
   const signupOpen = useSignupStatus().data?.open ?? false;
   const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform || "");
 
@@ -192,12 +158,9 @@ const AppHeader = () => {
           <Link to="/" className="flex items-center gap-2 min-w-0 shrink-0 group" aria-label="Feed Viewer Pro home">
             <BrandMark className="h-8 w-8 transition-transform duration-200 group-hover:scale-105" title="" />
             <span
-              className={cn(
-                "font-heading font-extrabold tracking-tight hidden sm:block truncate text-base",
-                hero ? "text-white" : "text-foreground",
-              )}
+              className="font-heading font-extrabold tracking-tight hidden sm:block truncate text-base text-foreground"
             >
-              Feed Viewer <span className={hero ? "text-[#7FD8A9]" : "text-primary-text"}>Pro</span>
+              Feed Viewer <span className="text-primary-text">Pro</span>
             </span>
           </Link>
 
@@ -210,14 +173,14 @@ const AppHeader = () => {
                   key={item.to}
                   to={item.to}
                   aria-current={active ? "page" : undefined}
-                  className={navPill({ hero, active })}
+                  className={navPill(active)}
                 >
                   {item.label}
                 </Link>
               );
             })}
             {groups.map((g) => (
-              <GroupMenu key={g.id} group={g} pathname={pathname} hero={hero} />
+              <GroupMenu key={g.id} group={g} pathname={pathname} />
             ))}
           </nav>
           <div className="flex-1 md:hidden" />
@@ -230,12 +193,7 @@ const AppHeader = () => {
               type="button"
               onClick={() => dispatchOpenCommandPalette()}
               aria-label="Open command palette"
-              className={cn(
-                "hidden md:flex items-center gap-2 rounded-full border px-3 h-9 text-xs transition-colors",
-                hero
-                  ? "border-white/20 text-white/85 hover:bg-white/10"
-                  : "border-border text-muted-foreground hover:text-foreground hover:bg-accent",
-              )}
+              className="hidden md:flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 h-9 text-xs text-muted-foreground transition-colors hover:text-foreground hover:bg-accent"
             >
               <Search className="w-3.5 h-3.5" aria-hidden />
               <kbd className="hidden lg:inline font-sans text-[11px] opacity-80">{isMac ? "⌘K" : "Ctrl+K"}</kbd>
@@ -249,12 +207,7 @@ const AppHeader = () => {
                   <button
                     type="button"
                     aria-label="User menu"
-                    className={cn(
-                      "hidden md:flex items-center gap-2 rounded-full border px-2.5 h-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                      hero
-                        ? "border-white/20 text-white hover:bg-white/10"
-                        : "border-border text-foreground hover:bg-accent",
-                    )}
+                    className="hidden md:flex items-center gap-2 rounded-full border border-border bg-background/60 px-2.5 h-9 text-sm text-foreground outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <UserCircle className="w-4 h-4" aria-hidden />
                     <span className="hidden lg:flex flex-col items-start leading-tight">
@@ -297,12 +250,7 @@ const AppHeader = () => {
                   asChild
                   size="sm"
                   variant="ghost"
-                  className={cn(
-                    "rounded-full h-8 px-4",
-                    hero
-                      ? "text-white/90 hover:text-white hover:bg-white/10 border border-white/30"
-                      : "text-muted-foreground hover:text-foreground hover:bg-accent",
-                  )}
+                  className="rounded-full h-8 px-4 text-muted-foreground hover:text-foreground hover:bg-accent"
                 >
                   <Link to="/login">
                     <LogIn className="w-3.5 h-3.5 mr-1.5" />
@@ -313,12 +261,7 @@ const AppHeader = () => {
                   <Button
                     asChild
                     size="sm"
-                    className={cn(
-                      "font-semibold rounded-full h-8 px-4 shadow-lg border-0",
-                      hero
-                        ? "bg-brand-green text-primary-foreground hover:bg-brand-green/90"
-                        : "bg-secondary hover:bg-secondary/90 text-secondary-foreground",
-                    )}
+                    className="font-semibold rounded-full h-8 px-4 shadow-sm border-0 bg-highlight-fill text-highlight-fill-foreground hover:bg-highlight-fill/90"
                   >
                     <Link to="/signup">
                       <UserPlus className="w-3.5 h-3.5 mr-1.5" />
@@ -335,7 +278,7 @@ const AppHeader = () => {
               aria-expanded={mobileOpen}
               aria-controls="mobile-main-nav"
               aria-label={mobileOpen ? "Close menu" : "Open menu"}
-              className={cn("md:hidden", iconBtn(hero))}
+              className={cn("md:hidden", iconBtn)}
             >
               {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>

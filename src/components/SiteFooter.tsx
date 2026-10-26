@@ -29,7 +29,7 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
       className={cn(
         "w-full shrink-0 border-t",
         isBrand
-          ? "border-primary/25 bg-[#070807] text-white"
+          ? "border-primary/25 bg-footer-brand text-on-media"
           : "border-border bg-muted/35 text-foreground",
         className,
       )}
@@ -43,12 +43,12 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
               to="/"
               className={cn(
                 "inline-flex items-center gap-3 rounded-xl outline-none transition-opacity hover:opacity-95 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                isBrand ? "focus-visible:ring-offset-[#070807]" : "focus-visible:ring-offset-background",
+                isBrand ? "focus-visible:ring-offset-footer-brand" : "focus-visible:ring-offset-background",
               )}
               aria-label="Feed Viewer Pro home"
             >
               <BrandMark className="h-10 w-10" title="" />
-              <span className={cn("font-heading text-lg font-extrabold tracking-tight", isBrand ? "text-white" : "text-foreground")}>
+              <span className={cn("font-heading text-lg font-extrabold tracking-tight", isBrand ? "text-on-media" : "text-foreground")}>
                 Feed Viewer <span className={isBrand ? "text-[#7FD8A9]" : "text-primary-text"}>Pro</span>
               </span>
             </Link>
@@ -82,7 +82,7 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
                       className={cn(
                         "inline-block text-[13px] font-medium font-body py-0.5 transition-colors rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                         isBrand
-                          ? "text-white/75 hover:text-brand-amber focus-visible:text-brand-amber focus-visible:ring-offset-[#070807]"
+                          ? "text-white/75 hover:text-brand-amber focus-visible:text-brand-amber focus-visible:ring-offset-footer-brand"
                           : "text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-visible:ring-offset-background",
                       )}
                     >
@@ -142,7 +142,7 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
               to="/shortcuts"
               className={cn(
                 "font-medium underline-offset-4 hover:underline outline-none rounded-sm focus-visible:ring-2 focus-visible:ring-ring",
-                isBrand ? "text-white/75 hover:text-brand-amber focus-visible:ring-offset-2 focus-visible:ring-offset-[#070807]" : "hover:text-foreground focus-visible:text-foreground",
+                isBrand ? "text-white/75 hover:text-brand-amber focus-visible:ring-offset-2 focus-visible:ring-offset-footer-brand" : "hover:text-foreground focus-visible:text-foreground",
               )}
             >
               All shortcuts
@@ -154,7 +154,7 @@ export function SiteFooter({ variant = "surface", className }: SiteFooterProps) 
               to="/sitemap"
               className={cn(
                 "font-medium underline-offset-4 hover:underline outline-none rounded-sm focus-visible:ring-2 focus-visible:ring-ring",
-                isBrand ? "text-white/75 hover:text-brand-amber focus-visible:ring-offset-2 focus-visible:ring-offset-[#070807]" : "hover:text-foreground focus-visible:text-foreground",
+                isBrand ? "text-white/75 hover:text-brand-amber focus-visible:ring-offset-2 focus-visible:ring-offset-footer-brand" : "hover:text-foreground focus-visible:text-foreground",
               )}
             >
               Full site map

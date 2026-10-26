@@ -85,7 +85,7 @@ function SignUpPage() {
   if (!status.data?.open) {
     return (
       <AuthPageLayout>
-        <Card className="w-full rounded-xl border border-white/[0.1] bg-card/95 shadow-[var(--shadow-elevated)]">
+        <Card className="w-full rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)]">
           <CardContent className="space-y-4 pt-6 text-center">
             <p className="text-sm text-foreground/80">{CLOSED_TEXT}</p>
             <Link to="/login" className="text-sm font-medium text-primary-text hover:underline">
@@ -99,7 +99,7 @@ function SignUpPage() {
 
   return (
     <AuthPageLayout>
-      <Card className="w-full rounded-xl border border-white/[0.1] bg-card/95 shadow-[var(--shadow-elevated)]">
+      <Card className="w-full rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)]">
         <CardHeader className="pb-5">
           <CardTitle className="font-heading text-2xl tracking-tight text-foreground">Create account</CardTitle>
         </CardHeader>

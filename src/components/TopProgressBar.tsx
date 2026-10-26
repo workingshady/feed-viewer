@@ -25,7 +25,7 @@ export function TopProgressBar() {
       aria-hidden={!visible}
       className={`pointer-events-none fixed inset-x-0 top-0 z-[200] h-0.5 overflow-hidden transition-opacity duration-300 ${visible ? "opacity-100" : "opacity-0"}`}
     >
-      <div className="h-full w-1/3 animate-[topbar_1.1s_ease-in-out_infinite] bg-[#7FD8A9]" />
+      <div className="h-full w-1/3 animate-[topbar_1.1s_ease-in-out_infinite] bg-highlight-fill" />
     </div>
   );
 }

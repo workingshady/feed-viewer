@@ -50,12 +50,12 @@ function AgentTile({ src, alt, className }: { src: string; alt: string; classNam
     return (
       <div
         className={cn(
-          "flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] ring-2 ring-white/15",
+          "flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-muted ring-2 ring-border",
           className,
         )}
         aria-hidden
       >
-        <User className="h-7 w-7 text-white/35" />
+        <User className="h-7 w-7 text-muted-foreground/60" />
       </div>
     );
   }
@@ -66,7 +66,7 @@ function AgentTile({ src, alt, className }: { src: string; alt: string; classNam
       alt={alt}
       onLoad={onLoad}
       onError={() => setFailed(true)}
-      className={cn("h-16 w-16 shrink-0 rounded-2xl ring-2 ring-white/15", tileFit, className)}
+      className={cn("h-16 w-16 shrink-0 rounded-2xl ring-2 ring-border", tileFit, className)}
     />
   );
 }

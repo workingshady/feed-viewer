@@ -85,7 +85,7 @@
       fourth surface level is expressed by shadow + hairline here, not by
       lightness. See the spec; this is not a duplicate value to "fix".
     */
-    --background: 108 14% 97%;
+    --background: 100 18% 96.5%;
     --foreground: 158 24% 12%;
 
     --card: 0 0% 100%;
@@ -111,35 +111,37 @@
     --secondary-foreground: 25 80% 12%;
     --secondary-text: 25 70% 32%;
 
-    --muted: 108 12% 94%;
-    --muted-foreground: 158 10% 38%;
+    --muted: 105 16% 93.5%;
+    --muted-foreground: 158 12% 35%;
 
-    --accent: 108 13% 91%;
+    /* Hover/selected wash: a touch greener than --muted so interaction reads as brand, not grey. */
+    --accent: 135 20% 91.5%;
     --accent-foreground: 158 24% 12%;
 
     --destructive: 0 70% 45%;
     --destructive-foreground: 0 0% 100%;
     --destructive-text: 0 70% 42%;
 
-    --border: 108 10% 86%;
-    --input: 108 10% 86%;
+    --border: 105 12% 85%;
+    /* Inputs a step stronger than card edges so fields read as interactive on white. */
+    --input: 105 12% 80%;
     --ring: 153 42% 20%;
 
     /* Replaces the old white-overlay `--listing-frame` ring. */
-    --hairline: 158 20% 12% / 0.05;
+    --hairline: 158 20% 12% / 0.06;
 
     --success: 152 55% 32%;
     --success-foreground: 0 0% 100%;
     --warning: 32 90% 33%;
     --warning-foreground: 0 0% 100%;
 
-    --sidebar-background: 108 13% 95%;
+    --sidebar-background: 105 16% 95%;
     --sidebar-foreground: 158 24% 12%;
     --sidebar-primary: var(--sb-green);
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 108 13% 91%;
+    --sidebar-accent: 135 20% 91.5%;
     --sidebar-accent-foreground: 158 24% 12%;
-    --sidebar-border: 108 10% 86%;
+    --sidebar-border: 105 12% 85%;
     --sidebar-ring: var(--sb-green);
 
     /* Listing "luxury chrome" accent — sand is too pale for text on white. */
@@ -171,7 +173,7 @@
     /* Charts — darkened for legibility on white. Recharts reads resolved hsl(). */
     --chart-line: 153 45% 34%;
     --chart-bar: 153 40% 38%;
-    --chart-grid: 108 10% 88%;
+    --chart-grid: 105 12% 88%;
     --chart-axis: 158 8% 45%;
     --chart-severity-error: 0 68% 48%;
     --chart-severity-warning: 32 85% 42%;
@@ -196,6 +198,36 @@
 
     --selection-bg: 153 42% 20% / 0.18;
     --selection-fg: 158 24% 12%;
+
+    /*
+      Highlight: the landing/hero accent. Dark uses the mint #7FD8A9, which is
+      1.5:1 on white — so light swaps to a deep brand green for text and a solid
+      green fill (white label) for CTAs, rather than inverting the mint.
+    */
+    --highlight: 153 50% 28%;
+    --highlight-fill: 153 42% 22%;
+    --highlight-fill-foreground: 0 0% 100%;
+
+    /*
+      Nav bar: frosted white glass over the tinted page, a hairline instead of a
+      heavy border, and a green-tinted drop so it lifts without grey mud.
+      Active item is a soft green wash + green text (not a solid block): on a
+      light bar a solid fill shouts louder than the page content.
+    */
+    --header-bg: 0 0% 100% / 0.8;
+    --header-border: 158 20% 12% / 0.08;
+    --header-shadow: 0 1px 0 0 hsl(0 0% 100% / 0.6) inset, 0 10px 30px -22px hsl(153 42% 20% / 0.35);
+    --nav-active-bg: 153 42% 20% / 0.09;
+    --nav-active-fg: 153 42% 20%;
+    --nav-active-ring: 153 42% 20% / 0.16;
+
+    /* Modal scrim: a tinted 45% veil; 80% black on a light app reads as a blackout. */
+    --overlay: 158 30% 8% / 0.45;
+
+    /* Landing footer: deep forest band anchors a light page (white text stays AA). */
+    --footer-brand: 153 42% 13%;
+    /* Hero radial glow: 0.55 on black, a whisper on the light page. */
+    --landing-glow: 0.12;
   }
 
   /* ── 3. Dark theme (must stay after light — equal specificity, source order wins) ── */
@@ -295,6 +327,22 @@
 
     --selection-bg: 153 42% 20% / 0.55;
     --selection-fg: 0 0% 100%;
+
+    --highlight: 149 51% 67%;
+    --highlight-fill: 149 51% 67%;
+    --highlight-fill-foreground: 153 47% 8%;
+
+    --header-bg: 0 0% 3% / 0.88;
+    --header-border: 0 0% 100% / 0.07;
+    --header-shadow: 0 12px 40px -20px hsl(0 0% 0% / 0.85);
+    --nav-active-bg: 153 42% 20%;
+    --nav-active-fg: 0 0% 100%;
+    --nav-active-ring: 0 0% 0% / 0;
+
+    --overlay: 0 0% 0% / 0.8;
+
+    --footer-brand: 120 7% 3%;
+    --landing-glow: 0.55;
   }
 }
 

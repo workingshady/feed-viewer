@@ -18,7 +18,7 @@ export function AuthRouteLoader() {
 /** Card-sized bootstrap on login/signup before session is known. */
 export function AuthCardLoader() {
   return (
-    <Card className="mx-auto w-full max-w-md rounded-xl border border-white/[0.1] bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-sm">
+    <Card className="mx-auto w-full max-w-md rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-sm">
       <CardContent className="flex flex-col items-center justify-center gap-3 py-16" role="status" aria-live="polite">
         <Loader2 className="h-10 w-10 animate-spin text-primary-text" aria-hidden />
         <p className="text-sm text-muted-foreground">Checking your session…</p>

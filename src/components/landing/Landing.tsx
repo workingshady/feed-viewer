@@ -54,27 +54,27 @@ function ProductPreview() {
   return (
     <div
       aria-hidden
-      className="w-full max-w-xl rounded-2xl border border-white/10 bg-[#111312] p-4 shadow-[0_30px_80px_-20px_rgba(29,71,52,0.55)]"
+      className="w-full max-w-xl rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-elevated)] ring-1 ring-[hsl(var(--hairline))]"
     >
       <div className="mb-3 flex items-center gap-2">
         <span className="h-2.5 w-2.5 rounded-full bg-success" />
-        <span className="text-sm font-semibold text-white">White &amp; Co Real Estate</span>
-        <span className="ml-auto font-mono text-xs text-white/50">Quality 86/100</span>
+        <span className="text-sm font-semibold text-foreground">White &amp; Co Real Estate</span>
+        <span className="ml-auto font-mono text-xs text-muted-foreground">Quality 86/100</span>
       </div>
       <ol className="space-y-2">
         {rows.map((r) => (
           <li
             key={r.v}
-            className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-xs ${r.live ? "border-[#7FD8A9]/60 bg-[#7FD8A9]/5" : "border-white/10"}`}
+            className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 text-xs ${r.live ? "border-highlight/40 bg-highlight/[0.06]" : "border-border"}`}
           >
-            <span className="font-mono font-bold text-white">v{r.v}</span>
+            <span className="font-mono font-bold text-foreground">v{r.v}</span>
             {r.live && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#7FD8A9] px-2 py-0.5 text-[10px] font-semibold text-[#0b1f16]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-highlight-fill px-2 py-0.5 text-[10px] font-semibold text-highlight-fill-foreground">
                 <Check className="h-3 w-3" /> Live
               </span>
             )}
-            <span className="hidden min-w-0 flex-1 truncate text-white/55 sm:block">{r.file}</span>
-            <span className="ml-auto font-mono text-white/70">{r.count}</span>
+            <span className="hidden min-w-0 flex-1 truncate text-muted-foreground sm:block">{r.file}</span>
+            <span className="ml-auto font-mono text-muted-foreground">{r.count}</span>
             <span className="flex gap-1 font-mono">
               <span className="rounded bg-success/15 px-1.5 text-success">{r.diff[0]}</span>
               <span className="rounded bg-destructive/15 px-1.5 text-destructive-text">{r.diff[1]}</span>
@@ -88,12 +88,12 @@ function ProductPreview() {
           const value = [91, 97, 74, 88][i];
           return (
             <div key={c.key} className="space-y-1">
-              <div className="flex justify-between text-[11px] text-white/55">
+              <div className="flex justify-between text-[11px] text-muted-foreground">
                 <span>{c.label}</span>
                 <span className="font-mono">{value}%</span>
               </div>
-              <div className="h-1.5 rounded-full bg-white/10">
-                <div className="h-1.5 rounded-full bg-[#7FD8A9]" style={{ width: `${value}%` }} />
+              <div className="h-1.5 rounded-full bg-muted">
+                <div className="h-1.5 rounded-full bg-highlight-fill" style={{ width: `${value}%` }} />
               </div>
             </div>
           );
@@ -110,26 +110,26 @@ function FloatingCards() {
     <>
       <div
         aria-hidden
-        className="absolute -bottom-16 left-0 hidden w-56 rounded-xl border border-white/10 bg-[#141716]/95 p-3 shadow-2xl backdrop-blur sm:block lg:-left-10"
+        className="absolute -bottom-16 left-0 hidden w-56 rounded-xl border border-border bg-popover/95 p-3 shadow-[var(--shadow-elevated)] backdrop-blur sm:block lg:-left-10"
       >
-        <div className="flex items-baseline justify-between text-[11px] text-white/60">
+        <div className="flex items-baseline justify-between text-[11px] text-muted-foreground">
           <span>Expected on Ziba</span>
-          <span className="font-mono text-white">3,089 · 98%</span>
+          <span className="font-mono text-foreground">3,089 · 98%</span>
         </div>
-        <div className="mt-2 h-1.5 rounded-full bg-white/10">
-          <div className="h-1.5 w-[98%] rounded-full bg-[#7FD8A9]" />
+        <div className="mt-2 h-1.5 rounded-full bg-muted">
+          <div className="h-1.5 w-[98%] rounded-full bg-highlight-fill" />
         </div>
-        <p className="mt-2 text-[10px] text-white/45">Held back: price on application 52</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">Held back: price on application 52</p>
       </div>
       <div
         aria-hidden
-        className="absolute -top-20 right-2 hidden w-44 rounded-xl border border-white/10 bg-[#141716]/95 p-3 shadow-2xl backdrop-blur sm:block lg:-right-6"
+        className="absolute -top-20 right-2 hidden w-44 rounded-xl border border-border bg-popover/95 p-3 shadow-[var(--shadow-elevated)] backdrop-blur sm:block lg:-right-6"
       >
-        <div className="text-[11px] text-white/60">Live listings</div>
+        <div className="text-[11px] text-muted-foreground">Live listings</div>
         <div className="font-mono text-lg font-semibold">4,975</div>
         <div className="mt-1 flex h-8 items-end gap-1">
           {bars.map((h, i) => (
-            <span key={i} className="flex-1 rounded-t-[3px] bg-[#7FD8A9]/80" style={{ height: `${h}%` }} />
+            <span key={i} className="flex-1 rounded-t-[3px] bg-highlight-fill/80" style={{ height: `${h}%` }} />
           ))}
         </div>
       </div>
@@ -160,13 +160,13 @@ export function Landing() {
 
   const ctas = (
     <div className="flex flex-col gap-3 sm:flex-row">
-      <Button asChild size="lg" className="h-12 rounded-full bg-[#7FD8A9] px-7 font-semibold text-[#0b1f16] hover:bg-[#7FD8A9]/90">
+      <Button asChild size="lg" className="h-12 rounded-full bg-highlight-fill px-7 font-semibold text-highlight-fill-foreground shadow-[var(--shadow-card-hover)] hover:bg-highlight-fill/90">
         <Link to="/login">
           Sign in to your workspace <ArrowRight className="ml-1.5 h-4 w-4" />
         </Link>
       </Button>
       {signupOpen && (
-        <Button asChild size="lg" variant="outline" className="h-12 rounded-full border-white/25 bg-transparent px-7 text-white hover:bg-white/10">
+        <Button asChild size="lg" variant="outline" className="h-12 rounded-full border-border bg-card/60 px-7 text-foreground hover:bg-accent">
           <Link to="/signup">Create account</Link>
         </Button>
       )}
@@ -174,35 +174,35 @@ export function Landing() {
   );
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       <AppHeader />
       <main id="main-content">
         {/* Hero */}
         <section className="relative overflow-hidden pt-[calc(6.5rem+env(safe-area-inset-top,0px))] pb-20">
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_70%_20%,rgba(29,71,52,0.55),transparent_70%)]"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_50%_at_70%_20%,hsl(var(--primary)/var(--landing-glow)),transparent_70%)]"
           />
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.07)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(70%_60%_at_60%_30%,black,transparent)]"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(hsl(var(--foreground)/0.07)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(70%_60%_at_60%_30%,black,transparent)]"
           />
           <div className="container relative grid items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
             <div className="space-y-6">
-              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1 text-xs text-white/70">
+              <span className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
                 <BrandMark className="h-4 w-4" title="" /> Real-estate XML feeds
               </span>
               <h1 className="font-heading text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
                 Every agency feed.
                 <br />
-                <span className="text-[#7FD8A9]">Every version.</span> Under control.
+                <span className="text-highlight">Every version.</span> Under control.
               </h1>
-              <p className="max-w-xl text-lg leading-relaxed text-white/70">
+              <p className="max-w-xl text-lg leading-relaxed text-muted-foreground">
                 Upload property feeds, see exactly what changed, check listing quality and choose which version is live —
                 with one-click rollback when a feed goes wrong.
               </p>
               {ctas}
-              <p className="text-sm text-white/45">Private workspace. Accounts are created by an administrator.</p>
+              <p className="text-sm text-muted-foreground">Private workspace. Accounts are created by an administrator.</p>
             </div>
             <div className="relative flex justify-center lg:justify-end">
               <ProductPreview />
@@ -212,37 +212,37 @@ export function Landing() {
         </section>
 
         {/* Proof strip */}
-        <section aria-label="At a glance" className="border-t border-white/10 bg-white/[0.02]">
+        <section aria-label="At a glance" className="border-t border-border bg-card/70 dark:bg-white/[0.02]">
           <dl className="container grid grid-cols-2 gap-6 py-8 md:grid-cols-4">
             {PROOF.map((p) => (
               <div key={p.label} className="space-y-1">
-                <dt className="font-heading text-2xl font-extrabold text-[#7FD8A9] sm:text-3xl">{p.value}</dt>
-                <dd className="text-sm text-white/60">{p.label}</dd>
+                <dt className="font-heading text-2xl font-extrabold text-highlight sm:text-3xl">{p.value}</dt>
+                <dd className="text-sm text-muted-foreground">{p.label}</dd>
               </div>
             ))}
           </dl>
         </section>
 
         {/* How it works */}
-        <section aria-labelledby="how-heading" className="border-t border-white/10 py-20">
+        <section aria-labelledby="how-heading" className="border-t border-border py-20">
           <div className="container space-y-10">
             <div className="max-w-2xl space-y-3">
               <h2 id="how-heading" className="font-heading text-3xl font-bold tracking-tight">
                 How it works
               </h2>
-              <p className="text-white/65">Three steps, and nothing on the site changes until you say so.</p>
+              <p className="text-muted-foreground">Three steps, and nothing on the site changes until you say so.</p>
             </div>
             <ol className="grid gap-6 md:grid-cols-3">
               {STEPS.map((s, i) => (
-                <li key={s.title} className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+                <li key={s.title} className="rounded-2xl border border-border bg-card dark:bg-white/[0.03] p-6">
                   <div className="mb-4 flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1D4734] font-mono text-sm font-bold text-[#7FD8A9]">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary font-mono text-sm font-bold text-primary-foreground dark:text-highlight">
                       {i + 1}
                     </span>
-                    <s.icon className="h-5 w-5 text-[#7FD8A9]" aria-hidden />
+                    <s.icon className="h-5 w-5 text-highlight" aria-hidden />
                   </div>
                   <h3 className="mb-2 text-lg font-semibold">{s.title}</h3>
-                  <p className="text-sm leading-relaxed text-white/65">{s.text}</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">{s.text}</p>
                 </li>
               ))}
             </ol>
@@ -250,7 +250,7 @@ export function Landing() {
         </section>
 
         {/* Features */}
-        <section aria-labelledby="features-heading" className="border-t border-white/10 py-20">
+        <section aria-labelledby="features-heading" className="border-t border-border py-20">
           <div className="container space-y-10">
             <h2 id="features-heading" className="font-heading text-3xl font-bold tracking-tight">
               What you get
@@ -258,9 +258,9 @@ export function Landing() {
             <ul className="grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
               {FEATURES.map((f) => (
                 <li key={f.title} className="space-y-2">
-                  <f.icon className="h-6 w-6 text-[#7FD8A9]" aria-hidden />
+                  <f.icon className="h-6 w-6 text-highlight" aria-hidden />
                   <h3 className="font-semibold">{f.title}</h3>
-                  <p className="text-sm leading-relaxed text-white/65">{f.text}</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">{f.text}</p>
                 </li>
               ))}
             </ul>
@@ -268,26 +268,26 @@ export function Landing() {
         </section>
 
         {/* Dashboards */}
-        <section aria-labelledby="dash-heading" className="border-t border-white/10 py-20">
+        <section aria-labelledby="dash-heading" className="border-t border-border py-20">
           <div className="container space-y-10">
             <div className="max-w-2xl space-y-3">
               <h2 id="dash-heading" className="font-heading text-3xl font-bold tracking-tight">
                 A dashboard for every question
               </h2>
-              <p className="text-white/65">
+              <p className="text-muted-foreground">
                 Charts follow the live version of every source, filter by sale or rent, and switch to a table you can download.
               </p>
             </div>
             <ul className="grid gap-4 md:grid-cols-3">
               {DASHBOARDS.map((d) => (
-                <li key={d.title} className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+                <li key={d.title} className="space-y-4 rounded-2xl border border-border bg-card dark:bg-white/[0.03] p-5">
                   <div className="flex h-24 items-end gap-1.5" aria-hidden>
                     {d.bars.map((h, i) => (
-                      <span key={i} className="flex-1 rounded-t-[4px] bg-[#7FD8A9]/70" style={{ height: `${h}%` }} />
+                      <span key={i} className="flex-1 rounded-t-[4px] bg-highlight-fill/70" style={{ height: `${h}%` }} />
                     ))}
                   </div>
                   <h3 className="font-semibold">{d.title}</h3>
-                  <p className="text-sm leading-relaxed text-white/65">{d.text}</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">{d.text}</p>
                 </li>
               ))}
             </ul>
@@ -295,20 +295,20 @@ export function Landing() {
         </section>
 
         {/* What it catches */}
-        <section aria-labelledby="catches-heading" className="border-t border-white/10 py-20">
+        <section aria-labelledby="catches-heading" className="border-t border-border py-20">
           <div className="container space-y-10">
             <div className="max-w-2xl space-y-3">
               <h2 id="catches-heading" className="font-heading text-3xl font-bold tracking-tight">
                 Catch it before the import does
               </h2>
-              <p className="text-white/65">The problems that usually surface days later in QA, flagged the moment a feed is uploaded.</p>
+              <p className="text-muted-foreground">The problems that usually surface days later in QA, flagged the moment a feed is uploaded.</p>
             </div>
             <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {CATCHES.map((c) => (
-                <li key={c.title} className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-transparent p-5">
-                  <ShieldCheck className="mb-3 h-5 w-5 text-[#7FD8A9]" aria-hidden />
+                <li key={c.title} className="rounded-2xl border border-border bg-gradient-to-b from-card to-card/40 dark:from-white/[0.04] dark:to-transparent p-5">
+                  <ShieldCheck className="mb-3 h-5 w-5 text-highlight" aria-hidden />
                   <h3 className="mb-1.5 font-semibold">{c.title}</h3>
-                  <p className="text-sm leading-relaxed text-white/65">{c.text}</p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">{c.text}</p>
                 </li>
               ))}
             </ul>
@@ -316,24 +316,24 @@ export function Landing() {
         </section>
 
         {/* Quality checks */}
-        <section aria-labelledby="quality-heading" className="border-t border-white/10 py-20">
+        <section aria-labelledby="quality-heading" className="border-t border-border py-20">
           <div className="container grid gap-10 lg:grid-cols-2">
             <div className="space-y-3">
               <h2 id="quality-heading" className="font-heading text-3xl font-bold tracking-tight">
                 Quality, scored the way portals score it
               </h2>
-              <p className="text-white/65">
+              <p className="text-muted-foreground">
                 Every version gets a 0–100 score from the checks portals care about, so weak listings are fixed before buyers see
                 them.
               </p>
             </div>
             <ul className="grid gap-3 sm:grid-cols-2">
               {QUALITY_CHECKS.map((c) => (
-                <li key={c.key} className="flex items-center justify-between rounded-xl border border-white/10 px-4 py-3 text-sm">
+                <li key={c.key} className="flex items-center justify-between rounded-xl border border-border px-4 py-3 text-sm">
                   <span className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-[#7FD8A9]" aria-hidden /> {c.label}
+                    <Check className="h-4 w-4 text-highlight" aria-hidden /> {c.label}
                   </span>
-                  <span className="font-mono text-white/45">{c.weight} pts</span>
+                  <span className="font-mono text-muted-foreground">{c.weight} pts</span>
                 </li>
               ))}
             </ul>
@@ -341,11 +341,11 @@ export function Landing() {
         </section>
 
         {/* Final CTA */}
-        <section className="border-t border-white/10 py-20">
-          <div className="container flex flex-col items-start gap-6 rounded-3xl border border-white/10 bg-[#1D4734]/30 p-8 md:flex-row md:items-center md:justify-between md:p-12">
+        <section className="border-t border-border py-20">
+          <div className="container flex flex-col items-start gap-6 rounded-3xl border border-border bg-gradient-to-br from-primary/[0.07] to-secondary/[0.06] p-8 dark:from-primary/30 dark:to-primary/30 md:flex-row md:items-center md:justify-between md:p-12">
             <div className="space-y-2">
               <h2 className="font-heading text-2xl font-bold tracking-tight sm:text-3xl">Ready when your feeds are.</h2>
-              <p className="text-white/65">Sign in to upload a feed, review it and make it live.</p>
+              <p className="text-muted-foreground">Sign in to upload a feed, review it and make it live.</p>
             </div>
             {ctas}
           </div>

@@ -670,10 +670,10 @@ const ListingsPage = () => {
         {validationIssueCount > 0 && (
           <div className="mb-5 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 px-5 py-3.5 flex flex-wrap items-center justify-between gap-3">
             <span className="flex items-center gap-2 text-sm text-foreground">
-              <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />
+              <AlertTriangle className="w-4 h-4 text-yellow-600 dark:text-yellow-400 shrink-0" />
               Live version has <strong className="text-foreground">{validationIssueCount}</strong> validation signal{validationIssueCount === 1 ? "" : "s"}
             </span>
-            <Button asChild size="sm" variant="ghost" className="border border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10 rounded-xl h-8 text-xs">
+            <Button asChild size="sm" variant="ghost" className="border border-yellow-500/30 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-500/10 rounded-xl h-8 text-xs">
               <Link to="/validation">View dashboard</Link>
             </Button>
           </div>

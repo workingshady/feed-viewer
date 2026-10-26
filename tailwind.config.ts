@@ -71,6 +71,18 @@ export default {
           DEFAULT: "hsl(var(--warning))",
           foreground: "hsl(var(--warning-foreground))",
         },
+        /**
+         * Hero/landing accent. Mint in dark, deep green in light (mint fails
+         * AA on white). `highlight` is for text/icons, `fill` for solid CTAs.
+         */
+        highlight: {
+          DEFAULT: "hsl(var(--highlight) / <alpha-value>)",
+          fill: "hsl(var(--highlight-fill) / <alpha-value>)",
+          "fill-foreground": "hsl(var(--highlight-fill-foreground) / <alpha-value>)",
+        },
+        /** Modal/sheet scrim — lighter, tinted veil in light mode. */
+        overlay: "hsl(var(--overlay))",
+        "footer-brand": "hsl(var(--footer-brand) / <alpha-value>)",
         /** Surface one level above `card` (popovers, sticky panels). */
         "surface-raised": "hsl(var(--surface-raised))",
         /**
