@@ -63,6 +63,7 @@ import { useVersionListings } from "@/hooks/useSources";
 import { liveVersionOf, type SourceDTO, type VersionDTO } from "@/lib/sourcesApi";
 import { useAppData } from "@/providers/DataProvider";
 import { cn } from "@/lib/utils";
+import { withSourceIds } from "@/lib/listingIds";
 import { useDataProfile } from "@/hooks/useDataProfile";
 import { profileInsights, type Insight } from "@/lib/dataProfile";
 import {
@@ -236,7 +237,8 @@ function FieldQualityBody({
   const [prefixSortKey, setPrefixSortKey] = useState<"prefix" | "paths" | "avg" | "minmax">("avg");
 
   const sessionSnapshotLoading = versionListings === null && !failed;
-  const resolvedListings = useMemo(() => versionListings ?? [], [versionListings]);
+  // Workspace ids ("<source id>:<reference>") so links open the listing page.
+  const resolvedListings = useMemo(() => (versionListings ? withSourceIds(source, versionListings) : []), [source, versionListings]);
 
   const analyticsListings = useMemo(
     () => filterListingsByPurpose(resolvedListings, purposeFilter),
