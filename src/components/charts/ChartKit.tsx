@@ -238,8 +238,9 @@ export function EmptyChart({ text = "No data yet" }: { text?: string }) {
 }
 
 /**
- * Horizontal bars, one or more stacked series. Rows are categories (sources, agents, checks…).
- * `onSelect` makes each row clickable.
+ * Horizontal bars, one or more series. Rows are categories (sources, agents, checks…).
+ * Stacked by default (part-to-whole); `grouped` puts series side by side so each one is read
+ * from the same zero baseline (comparing sale vs rent per source). `onSelect` makes rows clickable.
  */
 export function HBars<T extends Record<string, string | number>>({
   data,
@@ -249,6 +250,7 @@ export function HBars<T extends Record<string, string | number>>({
   onSelect,
   max,
   limit = 15,
+  grouped = false,
 }: {
   data: T[];
   labelKey: keyof T & string;
@@ -259,11 +261,14 @@ export function HBars<T extends Record<string, string | number>>({
   max?: number;
   /** Rows shown before "Show all". */
   limit?: number;
+  /** Side-by-side bars per row instead of one stacked bar. */
+  grouped?: boolean;
 }) {
   const list = useLongList(data, limit, (r) => String(r[labelKey]));
   if (!data.length) return <EmptyChart />;
   const shown = list.visible;
-  const height = Math.max(120, shown.length * 28 + 28);
+  const perRow = grouped ? series.length * 13 + 14 : 28;
+  const height = Math.max(120, shown.length * perRow + 28);
   const last = series.length - 1;
   const rows = shown.map((r) => ({ ...r, __total: series.reduce((n, s) => n + (Number(r[s.key]) || 0), 0) }));
   const longest = Math.max(...shown.map((r) => String(r[labelKey]).length), 4);
@@ -271,7 +276,13 @@ export function HBars<T extends Record<string, string | number>>({
   return (
     <div>
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 40, bottom: 0, left: 0 }} barCategoryGap={6}>
+      <BarChart
+        data={rows}
+        layout="vertical"
+        margin={{ top: 0, right: grouped ? 48 : 40, bottom: 0, left: 0 }}
+        barCategoryGap={grouped ? 7 : 6}
+        barGap={2}
+      >
         <CartesianGrid horizontal={false} stroke={GRID} />
         <XAxis
           type="number"
@@ -298,17 +309,27 @@ export function HBars<T extends Record<string, string | number>>({
             key={s.key}
             dataKey={s.key}
             name={s.label}
-            stackId="a"
+            stackId={grouped ? undefined : "a"}
             fill={s.color}
             stroke="hsl(var(--card))"
             strokeWidth={1}
-            radius={i === last ? [0, 4, 4, 0] : 0}
+            radius={grouped || i === last ? [0, 4, 4, 0] : 0}
             onClick={onSelect ? (_d: unknown, idx: number) => onSelect(shown[idx]) : undefined}
             className={onSelect ? "cursor-pointer" : undefined}
-            maxBarSize={22}
+            maxBarSize={grouped ? 12 : 22}
           >
-            {i === last && (
-              <LabelList dataKey="__total" position="right" fontSize={11} fill="hsl(var(--muted-foreground))" formatter={valueFormat} />
+            {grouped ? (
+              <LabelList
+                dataKey={s.key}
+                position="right"
+                fontSize={10}
+                fill="hsl(var(--muted-foreground))"
+                formatter={(v: number) => (v ? valueFormat(v) : "")}
+              />
+            ) : (
+              i === last && (
+                <LabelList dataKey="__total" position="right" fontSize={11} fill="hsl(var(--muted-foreground))" formatter={valueFormat} />
+              )
             )}
           </Bar>
         ))}
@@ -316,6 +337,92 @@ export function HBars<T extends Record<string, string | number>>({
     </ResponsiveContainer>
     {list.controls}
     </div>
+  );
+}
+
+/**
+ * Horizontal diverging bars: `positive` series stack right of zero, `negative` series stack left
+ * (pass them as positive numbers). Rows read top to bottom with full-width labels, so long names
+ * such as "Source name v12" stay legible where angled column ticks would clip them.
+ */
+export function DivergingBars<T extends Record<string, string | number>>({
+  data,
+  labelKey,
+  positive,
+  negative,
+  valueFormat = fmt,
+  onSelect,
+}: {
+  data: T[];
+  labelKey: keyof T & string;
+  positive: SeriesDef[];
+  negative: SeriesDef[];
+  valueFormat?: (n: number) => string;
+  onSelect?: (row: T) => void;
+}) {
+  if (!data.length) return <EmptyChart />;
+  const rows = data.map((r) => {
+    const out: Record<string, string | number> = { ...r };
+    for (const s of negative) out[s.key] = -(Number(r[s.key]) || 0);
+    return out;
+  });
+  const extent = Math.max(
+    1,
+    ...data.map((r) => positive.reduce((n, s) => n + (Number(r[s.key]) || 0), 0)),
+    ...data.map((r) => negative.reduce((n, s) => n + (Number(r[s.key]) || 0), 0)),
+  );
+  const longest = Math.max(...data.map((r) => String(r[labelKey]).length), 4);
+  const labelChars = Math.min(28, longest);
+  const all = [...negative, ...positive];
+  const lastPos = positive.length - 1;
+  const lastNeg = negative.length - 1;
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(140, data.length * 26 + 32)}>
+      <BarChart data={rows} layout="vertical" stackOffset="sign" margin={{ top: 0, right: 12, bottom: 0, left: 0 }} barCategoryGap={5}>
+        <CartesianGrid horizontal={false} stroke={GRID} />
+        {/* Symmetric domain: equal distances mean equal counts on both sides of zero. */}
+        <XAxis
+          type="number"
+          domain={[-extent, extent]}
+          tick={AXIS}
+          axisLine={false}
+          tickLine={false}
+          allowDecimals={false}
+          tickCount={5}
+          tickFormatter={(v: number) => compact(Math.abs(v))}
+        />
+        <YAxis
+          type="category"
+          dataKey={labelKey}
+          width={labelChars * 6.4 + 14}
+          tick={<CategoryTick max={labelChars} />}
+          axisLine={false}
+          tickLine={false}
+          interval={0}
+        />
+        <Tooltip {...RECHARTS_TOOLTIP_PROPS} cursor={RECHARTS_BAR_CURSOR} formatter={(v: number) => valueFormat(Math.abs(v))} />
+        <ReferenceLine x={0} stroke="hsl(var(--muted-foreground))" strokeOpacity={0.5} />
+        {all.map((s) => {
+          const neg = negative.includes(s);
+          const outer = neg ? negative.indexOf(s) === lastNeg : positive.indexOf(s) === lastPos;
+          return (
+            <Bar
+              key={s.key}
+              dataKey={s.key}
+              name={s.label}
+              stackId="d"
+              fill={s.color}
+              stroke="hsl(var(--card))"
+              strokeWidth={1}
+              radius={outer ? (neg ? [4, 0, 0, 4] : [0, 4, 4, 0]) : 0}
+              maxBarSize={18}
+              onClick={onSelect ? (_d: unknown, idx: number) => onSelect(data[idx]) : undefined}
+              className={onSelect ? "cursor-pointer" : undefined}
+            />
+          );
+        })}
+      </BarChart>
+    </ResponsiveContainer>
   );
 }
 

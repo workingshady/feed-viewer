@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { ChartCard, Columns, Donut, EmptyChart, HBars, Heatmap, Lines, ScatterPlot, SERIES, type SeriesDef } from "@/components/charts/ChartKit";
+import { ChartCard, Columns, DivergingBars, Donut, EmptyChart, HBars, Heatmap, Lines, ScatterPlot, SERIES, type SeriesDef } from "@/components/charts/ChartKit";
 import { bedroomMix, priceBands, topValues, type Bucket } from "@/lib/sourceInsights";
 import { QUALITY_CHECKS, listingQuality } from "@/lib/versionStats";
-import type { SourceDTO } from "@/lib/sourcesApi";
+import type { SourceDTO, VersionDTO } from "@/lib/sourcesApi";
 import type { Listing } from "@/lib/types";
 
 type Purpose = "all" | "sale" | "rent";
@@ -13,11 +13,13 @@ const SALE_RENT: SeriesDef[] = [
   { key: "sale", label: "Sale", color: SERIES[0] },
   { key: "rent", label: "Rent", color: SERIES[1] },
 ];
-const DIFF: SeriesDef[] = [
+// Legend order matches the chart left to right: removed (below zero), then added, changed.
+const DIFF_NEG: SeriesDef[] = [{ key: "removed", label: "Removed", color: SERIES[1] }];
+const DIFF_POS: SeriesDef[] = [
   { key: "added", label: "Added", color: SERIES[2] },
   { key: "changed", label: "Changed", color: SERIES[0] },
-  { key: "removed", label: "Removed", color: SERIES[1] },
 ];
+const DIFF: SeriesDef[] = [...DIFF_NEG, ...DIFF_POS];
 const COUNT = (label: string): SeriesDef[] => [{ key: "count", label, color: SERIES[0] }];
 const bucketTable = (head: string, b: Bucket[]) => ({ columns: [head, "Listings"], rows: b.map((x) => [x.label, x.count]) });
 
@@ -47,23 +49,27 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
     return { series, rows, skipped: sources.filter((s) => s.versions.length >= 2).length - withHistory.length };
   }, [sources]);
 
-  const recent = useMemo(
-    () =>
-      sources
-        .flatMap((s) => s.versions.map((v) => ({ s, v })))
-        .sort((a, b) => b.v.createdAt.localeCompare(a.v.createdAt))
-        .slice(0, 14)
-        .reverse()
-        .map(({ s, v }) => ({
-          label: `${s.name} v${v.number}`,
-          name: `${s.name} v${v.number}`,
-          added: v.added,
-          changed: v.changed,
-          // Diverging: removals plot below the zero line.
-          removed: -v.removed,
-        })),
-    [sources],
-  );
+  // A source's first upload has nothing to diff against: everything counts as "added" (often
+  // thousands), which flattened every real change to a sliver. Those are left out of the chart.
+  const recent = useMemo(() => {
+    const firstIds = new Set(
+      sources.map((s) => s.versions.reduce<VersionDTO | null>((a, v) => (!a || v.number < a.number ? v : a), null)?.id),
+    );
+    const rows = sources
+      .flatMap((s) => s.versions.map((v) => ({ s, v })))
+      .filter(({ v }) => !firstIds.has(v.id))
+      .sort((a, b) => b.v.createdAt.localeCompare(a.v.createdAt))
+      .slice(0, 14)
+      .map(({ s, v }) => ({
+        id: s.id,
+        // Version first: long agency names get clipped at the end, and the version must survive.
+        label: `v${v.number} · ${s.name}`,
+        added: v.added,
+        changed: v.changed,
+        removed: v.removed,
+      }));
+    return rows;
+  }, [sources]);
 
   const inventory = useMemo(
     () =>
@@ -100,15 +106,25 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
       </ChartCard>
       <ChartCard
         title="Recent changes"
-        description="Added and changed above the line, removed below, for the last uploads (oldest first)."
+        description="Listings removed (left of zero) and added or changed (right) by each recent upload, newest first. First uploads are left out: everything in them is new."
         legend={DIFF}
-        table={{ columns: ["Upload", "Added", "Changed", "Removed"], rows: recent.map((r) => [r.name, r.added, r.changed, -r.removed]) }}
+        table={{ columns: ["Upload", "Added", "Changed", "Removed"], rows: recent.map((r) => [r.label, r.added, r.changed, r.removed]) }}
       >
-        <Columns data={recent} xKey="label" series={DIFF} />
+        {recent.length ? (
+          <DivergingBars
+            data={recent}
+            labelKey="label"
+            positive={DIFF_POS}
+            negative={DIFF_NEG}
+            onSelect={(r) => navigate(`/sources?source=${r.id}`)}
+          />
+        ) : (
+          <EmptyChart text="Appears once a source has a second upload to compare." />
+        )}
       </ChartCard>
       <ChartCard
         title="Live inventory by source"
-        description="Sale and rent listings in each source's live version, largest first. Click a bar to open the agency."
+        description="Sale and rent listings side by side for each source's live version, largest total first. Click a bar to open the agency."
         legend={SALE_RENT}
         className="lg:col-span-2"
         table={{ columns: ["Source", "Sale", "Rent", "Total"], rows: inventory.map((r) => [r.name, r.sale, r.rent, r.total]) }}
@@ -118,6 +134,7 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
           limit={TOP_SOURCES}
           labelKey="name"
           series={SALE_RENT}
+          grouped
           onSelect={(r) => navigate(`/agencies/${encodeURIComponent(String(r.name))}`)}
         />
       </ChartCard>
@@ -260,7 +277,7 @@ export function ListingCharts({ listings, sources }: { listings: Listing[]; sour
           legend={bedSeries}
           table={{ columns: ["Type", "Sale", "Rent"], rows: data.types.map((t) => [t.label, t.sale, t.rent]) }}
         >
-          <HBars data={data.types} labelKey="label" series={bedSeries} />
+          <HBars data={data.types} labelKey="label" series={bedSeries} grouped={bedSeries.length > 1} />
         </ChartCard>
         <ChartCard title="Top communities" table={bucketTable("Community", data.communities)}>
           <HBars data={data.communities} labelKey="label" series={COUNT("Listings")} />
@@ -270,7 +287,12 @@ export function ListingCharts({ listings, sources }: { listings: Listing[]; sour
           description="Median for the busiest communities (5+ priced sales with an area)."
           table={{ columns: ["Community", "Median AED/sqft", "Sales"], rows: data.ladder.map((d) => [d.label, d.median, d.count]) }}
         >
-          <HBars data={data.ladder} labelKey="label" series={[{ key: "median", label: "AED / sqft", color: SERIES[0] }]} />
+          <HBars
+            data={data.ladder}
+            labelKey="label"
+            series={[{ key: "median", label: "AED / sqft", color: SERIES[0] }]}
+            valueFormat={(n) => n.toLocaleString()}
+          />
         </ChartCard>
         <ChartCard
           title="Quality checks by source"
