@@ -1,3 +1,4 @@
+import { WhenVisible } from "@/components/WhenVisible";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -29,7 +30,8 @@ import { GateBadge } from "@/components/sources/FeedChecks";
 import { useAppData } from "@/providers/useAppData";
 import { useAuth } from "@/providers/AuthProvider";
 import { hasRole } from "@/lib/roles";
-import { computeVersionStats } from "@/lib/versionStats";
+import { computeVersionStatsSliced } from "@/lib/versionStats";
+import { useSlicedMemo } from "@/lib/yieldToMain";
 import { formatPriceCompact } from "@/lib/displayPrice";
 import type { SourceDTO, VersionDTO } from "@/lib/sourcesApi";
 import type { Listing } from "@/lib/types";
@@ -218,7 +220,8 @@ export function Dashboard() {
   const canEdit = hasRole(user?.role, "editor");
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const stats = useMemo(() => (listings.length ? computeVersionStats(listings) : null), [listings]);
+  // Whole-workspace stats are computed in slices so the page stays responsive on 100k listings.
+  const stats = useSlicedMemo(async () => (listings.length ? computeVersionStatsSliced(listings) : null), [listings]);
   const uploads = useMemo(
     () =>
       sources
@@ -283,12 +286,23 @@ export function Dashboard() {
               <RecentUploads uploads={uploads} />
             </div>
 
-            <ImportReadiness sources={sources} listings={listings} />
+            {/* Heavy sections render as they scroll into view, so the page opens instantly on large workspaces. */}
+            <WhenVisible minHeight={240}>
+              <ImportReadiness sources={sources} listings={listings} />
+            </WhenVisible>
 
             <SourceCharts sources={sources} />
-            <ListingCharts listings={listings} sources={sources} />
-            {listings.length > 0 && <MarketAnalysis listings={listings} title="Market analysis (all live listings)" />}
-            <SourceComparisonTable sources={sources} />
+            <WhenVisible minHeight={900}>
+              <ListingCharts listings={listings} sources={sources} />
+            </WhenVisible>
+            {listings.length > 0 && (
+              <WhenVisible minHeight={700}>
+                <MarketAnalysis listings={listings} title="Market analysis (all live listings)" />
+              </WhenVisible>
+            )}
+            <WhenVisible minHeight={300}>
+              <SourceComparisonTable sources={sources} />
+            </WhenVisible>
             <NewestListings listings={listings} />
 
             <div className="flex flex-wrap gap-2 text-sm">

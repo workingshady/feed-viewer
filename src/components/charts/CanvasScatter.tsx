@@ -1,3 +1,4 @@
+import { dotSprite, stamp } from "@/lib/canvasDots";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -194,14 +195,9 @@ export function CanvasScatter<T extends Record<string, string | number>>({
     ctx.globalAlpha = Math.max(0.12, Math.min(0.6, 0.6 * Math.sqrt(800 / Math.max(n, 1))));
     ctx.fillStyle = fill;
     const r = n > 8000 ? 1.8 : n > 2000 ? 2.4 : 3.2;
-    ctx.beginPath();
-    for (const p of shown) {
-      const X = scale.px(p.x);
-      const Y = scale.py(p.y);
-      ctx.moveTo(X + r, Y);
-      ctx.arc(X, Y, r, 0, Math.PI * 2);
-    }
-    ctx.fill();
+    // Stamp a pre-drawn dot: one path of 30k+ arcs takes seconds to fill, drawImage milliseconds.
+    const dot = dotSprite(fill, r, dpr);
+    for (const p of shown) stamp(ctx, dot, scale.px(p.x), scale.py(p.y), dpr);
     ctx.globalAlpha = 1;
     if (hover != null && shown[hover]) {
       const p = shown[hover];

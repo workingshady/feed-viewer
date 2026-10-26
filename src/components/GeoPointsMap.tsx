@@ -1,3 +1,4 @@
+import { dotSprite, stamp } from "@/lib/canvasDots";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import L from "leaflet";
@@ -182,24 +183,192 @@ function addPin(group: L.LayerGroup, renderer: L.Renderer, l: Listing, style: { 
   return m;
 }
 
-/** Every pin, drawn by Leaflet on one canvas (no React per pin, so tens of thousands stay fast). */
+/**
+ * Every pin drawn by one canvas in a single pass (points batched by colour), with hover and click
+ * found through a pixel grid. Nothing is created per pin, so 100k+ listings pan and hover smoothly.
+ */
 function PinsLayer({ listings, styler, selectedId, handlers }: { listings: Listing[]; styler: Styler; selectedId?: string | null; handlers: PinHandlers }) {
   const map = useMap();
   const h = useRef(handlers);
   h.current = handlers;
+  const sel = useRef(selectedId);
+  sel.current = selectedId;
+  const redrawRef = useRef<() => void>(() => {});
+
+  // World pixel coordinates at zoom 0 and colours: computed once per data/colour change.
+  const data = useMemo(() => {
+    const n = listings.length;
+    const x = new Float64Array(n);
+    const y = new Float64Array(n);
+    const fill: string[] = new Array(n);
+    const ring: (string | null)[] = new Array(n);
+    const r = new Float32Array(n);
+    listings.forEach((l, i) => {
+      const pt = L.CRS.EPSG3857.latLngToPoint(L.latLng(l.latitude!, l.longitude!), 0);
+      x[i] = pt.x;
+      y[i] = pt.y;
+      const st = styler(l);
+      fill[i] = st.fill;
+      ring[i] = st.ring;
+      r[i] = clamp(3 + Math.log10((l.images?.length ?? 0) + 1) * 2.2, 3, 7) + (st.ring ? 1.5 : 0);
+    });
+    const byFill = new Map<string, number[]>();
+    const rings: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (ring[i]) rings.push(i);
+      else {
+        const arr = byFill.get(fill[i]);
+        if (arr) arr.push(i);
+        else byFill.set(fill[i], [i]);
+      }
+    }
+    return { x, y, fill, ring, r, byFill, rings };
+  }, [listings, styler]);
+
   useEffect(() => {
-    const renderer = L.canvas({ padding: 0.5 });
-    const group = L.layerGroup();
-    // Outliers and the selected pin last, so they sit on top.
-    const rank = (l: Listing) => (l.id === selectedId ? 2 : styler(l).ring ? 1 : 0);
-    const ordered = [...listings].sort((a, b) => rank(a) - rank(b));
-    for (const l of ordered) addPin(group, renderer, l, styler(l), l.id === selectedId, h);
-    group.addTo(map);
-    return () => {
-      group.remove();
-      renderer.remove();
+    const container = map.getContainer();
+    const canvas = document.createElement("canvas");
+    canvas.style.cssText = "position:absolute;inset:0;z-index:400;pointer-events:none";
+    container.appendChild(canvas);
+    const ctx = canvas.getContext("2d")!;
+    const CELL = 10;
+    let grid = new Map<number, number[]>();
+    let px = new Float32Array(0);
+    let py = new Float32Array(0);
+    let frame = 0;
+
+    const draw = () => {
+      frame = 0;
+      const size = map.getSize();
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== size.x * dpr || canvas.height !== size.y * dpr) {
+        canvas.width = size.x * dpr;
+        canvas.height = size.y * dpr;
+        canvas.style.width = `${size.x}px`;
+        canvas.style.height = `${size.y}px`;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size.x, size.y);
+      const scale = 2 ** map.getZoom();
+      const origin = map.getPixelOrigin();
+      const offset = map.containerPointToLayerPoint([0, 0]);
+      const n = data.x.length;
+      px = new Float32Array(n);
+      py = new Float32Array(n);
+      grid = new Map();
+      for (let i = 0; i < n; i++) {
+        const cx = data.x[i] * scale - origin.x - offset.x;
+        const cy = data.y[i] * scale - origin.y - offset.y;
+        px[i] = cx;
+        py[i] = cy;
+        if (cx < -10 || cy < -10 || cx > size.x + 10 || cy > size.y + 10) continue;
+        const k = Math.floor(cx / CELL) * 100000 + Math.floor(cy / CELL);
+        const cell = grid.get(k);
+        if (cell) cell.push(i);
+        else grid.set(k, [i]);
+      }
+      const visible = (i: number) => px[i] > -10 && py[i] > -10 && px[i] < size.x + 10 && py[i] < size.y + 10;
+      // Pre-drawn dots stamped with drawImage: a path of 100k arcs takes seconds, this milliseconds.
+      ctx.globalAlpha = 0.75;
+      for (const [color, idx] of data.byFill) {
+        for (const i of idx) {
+          if (visible(i)) stamp(ctx, dotSprite(color, data.r[i], dpr), px[i], py[i], dpr);
+        }
+      }
+      // Outliers on top: filled, with a status ring.
+      for (const i of data.rings) {
+        if (!visible(i)) continue;
+        ctx.globalAlpha = 0.9;
+        stamp(ctx, dotSprite(data.fill[i], data.r[i], dpr, { color: data.ring[i]!, width: 2.5 }), px[i], py[i], dpr);
+      }
+      const s = sel.current ? listings.findIndex((l) => l.id === sel.current) : -1;
+      if (s >= 0 && visible(s)) {
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(px[s], py[s], data.r[s] + 3, 0, Math.PI * 2);
+        ctx.fillStyle = data.fill[s];
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "#111827";
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
     };
-  }, [map, listings, styler, selectedId]);
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(draw);
+    };
+    redrawRef.current = schedule;
+
+    const nearest = (e: L.LeafletMouseEvent): number => {
+      const { x, y } = e.containerPoint;
+      const gx = Math.floor(x / CELL);
+      const gy = Math.floor(y / CELL);
+      let best = -1;
+      let bestD = 9 * 9;
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++)
+          for (const i of grid.get((gx + dx) * 100000 + gy + dy) ?? []) {
+            const d = (px[i] - x) ** 2 + (py[i] - y) ** 2;
+            if (d <= Math.max(bestD, data.r[i] ** 2) && d <= bestD) {
+              bestD = d;
+              best = i;
+            }
+          }
+      return best;
+    };
+    let hovered = -1;
+    let posFrame = 0;
+    let lastPos: { x: number; y: number } | null = null;
+    const onMove = (e: L.LeafletMouseEvent) => {
+      const i = nearest(e);
+      container.style.cursor = i >= 0 ? "pointer" : "";
+      if (i !== hovered) {
+        hovered = i;
+        h.current.onHover?.(i >= 0 ? listings[i].id : null);
+        if (i < 0) h.current.onHoverPos?.(null);
+      }
+      if (i >= 0) {
+        lastPos = { x: e.containerPoint.x, y: e.containerPoint.y };
+        // At most one position update per frame keeps the page from re-rendering on every pixel.
+        if (!posFrame)
+          posFrame = requestAnimationFrame(() => {
+            posFrame = 0;
+            if (lastPos) h.current.onHoverPos?.(lastPos);
+          });
+      }
+    };
+    const onOut = () => {
+      if (hovered >= 0) {
+        hovered = -1;
+        h.current.onHover?.(null);
+        h.current.onHoverPos?.(null);
+      }
+    };
+    const onClick = (e: L.LeafletMouseEvent) => {
+      const i = nearest(e);
+      if (i >= 0) h.current.onSelect?.(listings[i].id);
+    };
+    map.on("move zoom viewreset resize", schedule);
+    map.on("mousemove", onMove);
+    map.on("mouseout", onOut);
+    map.on("click", onClick);
+    draw();
+    return () => {
+      map.off("move zoom viewreset resize", schedule);
+      map.off("mousemove", onMove);
+      map.off("mouseout", onOut);
+      map.off("click", onClick);
+      if (frame) cancelAnimationFrame(frame);
+      if (posFrame) cancelAnimationFrame(posFrame);
+      container.style.cursor = "";
+      canvas.remove();
+    };
+  }, [map, data, listings]);
+
+  // A new selection only repaints; no data is rebuilt.
+  useEffect(() => {
+    redrawRef.current();
+  }, [selectedId]);
   return null;
 }
 

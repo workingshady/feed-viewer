@@ -1,4 +1,5 @@
-import { detectGeoOutliers, OUTLIER_KINDS, type OutlierKind } from "@/lib/geoOutliers";
+import { OUTLIER_KINDS, type OutlierKind } from "@/lib/geoOutliers";
+import { useGeoOutliers } from "@/hooks/useGeoOutliers";
 import { OutliersPanel } from "@/components/map/OutliersPanel";
 import { ChartCard, HBars, SERIES } from "@/components/charts/ChartKit";
 import AppHeader from "@/components/AppHeader";
@@ -32,7 +33,7 @@ import {
   Table2,
   TriangleAlert,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState } from "react";
 import type { Listing } from "@/lib/types";
 import type { GeoPointsMapView, MapColorBy, MapDisplayMode } from "@/components/GeoPointsMap";
 
@@ -328,7 +329,8 @@ const GeoPointsPage = () => {
     return uniqueNonEmpty(effectiveScoped.map((l) => (l.propertyType ? String(l.propertyType) : "")));
   }, [effectiveScoped]);
 
-  const searchNorm = search.trim().toLowerCase();
+  // Typing stays instant: filtering follows the deferred value in the background.
+  const searchNorm = useDeferredValue(search.trim().toLowerCase());
   const bedsMin = useMemo(() => {
     const n = Number.parseInt(minBeds.trim(), 10);
     return Number.isFinite(n) ? n : null;
@@ -345,6 +347,21 @@ const GeoPointsPage = () => {
     const n = Number.parseFloat(maxPrice.trim().replace(/,/g, ""));
     return Number.isFinite(n) ? n : null;
   }, [maxPrice]);
+
+  /** Search text per listing, built once per data change instead of on every keystroke. */
+  const haystack = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const l of effectiveScoped) {
+      m.set(
+        l.id,
+        [l.id, l.title, l.reference, l.city, l.community, l.subCommunity, l.propertyName, l.agent?.name, l.developer, l.sourceAgency, listingAddressLine(l)]
+          .map((x) => norm(x).toLowerCase())
+          .filter(Boolean)
+          .join(" · "),
+      );
+    }
+    return m;
+  }, [effectiveScoped]);
 
   const baseFiltered = useMemo(() => {
     return effectiveScoped.filter((l) => {
@@ -365,25 +382,7 @@ const GeoPointsPage = () => {
       if (priceMin != null && (Number.isFinite(l.price) ? l.price : 0) < priceMin) return false;
       if (priceMax != null && (Number.isFinite(l.price) ? l.price : 0) > priceMax) return false;
 
-      if (searchNorm) {
-        const hay = [
-          l.id,
-          l.title,
-          l.reference,
-          l.city,
-          l.community,
-          l.subCommunity,
-          l.propertyName,
-          l.agent?.name,
-          l.developer,
-          l.sourceAgency,
-          listingAddressLine(l),
-        ]
-          .map((x) => norm(x).toLowerCase())
-          .filter(Boolean)
-          .join(" · ");
-        if (!hay.includes(searchNorm)) return false;
-      }
+      if (searchNorm && !(haystack.get(l.id) ?? "").includes(searchNorm)) return false;
       return true;
     });
   }, [
@@ -400,6 +399,7 @@ const GeoPointsPage = () => {
     priceMin,
     priceMax,
     searchNorm,
+    haystack,
   ]);
 
   const withCoords = useMemo(() => {
@@ -413,7 +413,8 @@ const GeoPointsPage = () => {
   }, [baseFiltered]);
 
   // Location and price outliers, judged within each listing's market (see lib/geoOutliers).
-  const geo = useMemo(() => detectGeoOutliers(withCoords), [withCoords]);
+  // Computed in a Web Worker so filtering and panning never wait for it.
+  const { geo, running: geoRunning } = useGeoOutliers(withCoords);
   const outlierIds = useMemo(
     () => new Set([...geo.byId.values()].filter((o) => o.flags.some((f) => outlierKinds.has(f.kind))).map((o) => o.listing.id)),
     [geo, outlierKinds],
@@ -438,15 +439,9 @@ const GeoPointsPage = () => {
     });
   }, [filtered, onlyInViewport, mapView?.bounds]);
 
-  const selectedListing = useMemo(() => {
-    if (!selectedId) return null;
-    return filtered.find((l) => l.id === selectedId) ?? withCoords.find((l) => l.id === selectedId) ?? null;
-  }, [filtered, withCoords, selectedId]);
-
-  const hoveredListing = useMemo(() => {
-    if (!hoveredId) return null;
-    return filtered.find((l) => l.id === hoveredId) ?? withCoords.find((l) => l.id === hoveredId) ?? null;
-  }, [filtered, withCoords, hoveredId]);
+  const listingById = useMemo(() => new Map(effectiveScoped.map((l) => [l.id, l])), [effectiveScoped]);
+  const selectedListing = selectedId ? listingById.get(selectedId) ?? null : null;
+  const hoveredListing = hoveredId ? listingById.get(hoveredId) ?? null : null;
 
   const coverage = useMemo(() => {
     const f = onlyInViewport ? filteredInViewport : filtered;
@@ -460,10 +455,14 @@ const GeoPointsPage = () => {
       )
       .map((l) => ({ lat: l.latitude!, lng: l.longitude! }));
     if (pts.length === 0) return null;
-    const latMin = Math.min(...pts.map((p) => p.lat));
-    const latMax = Math.max(...pts.map((p) => p.lat));
-    const lngMin = Math.min(...pts.map((p) => p.lng));
-    const lngMax = Math.max(...pts.map((p) => p.lng));
+    // A loop, not Math.min(...array): spreading 100k values is slow and can overflow the stack.
+    let latMin = Infinity, latMax = -Infinity, lngMin = Infinity, lngMax = -Infinity;
+    for (const p of pts) {
+      if (p.lat < latMin) latMin = p.lat;
+      if (p.lat > latMax) latMax = p.lat;
+      if (p.lng < lngMin) lngMin = p.lng;
+      if (p.lng > lngMax) lngMax = p.lng;
+    }
     const center = { lat: (latMin + latMax) / 2, lng: (lngMin + lngMax) / 2 };
     const spreadKm = haversineKm({ lat: latMin, lng: lngMin }, { lat: latMax, lng: lngMax });
     return { latMin, latMax, lngMin, lngMax, center, spreadKm };
@@ -818,6 +817,7 @@ const GeoPointsPage = () => {
                 Market rings (95% of listings)
               </label>
               <span className="ml-auto text-[11px] text-muted-foreground">
+                {geoRunning ? "Checking outliers… · " : ""}
                 {outlierIds.size.toLocaleString()} outliers ringed ·{" "}
                 <button type="button" className="underline-offset-2 hover:underline" onClick={() => setTab("outliers")}>
                   review

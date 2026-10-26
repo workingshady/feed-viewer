@@ -1,3 +1,4 @@
+import { forEachSliced, yieldToMain } from "@/lib/yieldToMain";
 import type { Listing } from "@/lib/types";
 import { annualRent, inMarketBounds, marketOf, marketsIn, rentPeriodMisread } from "@/lib/markets";
 
@@ -57,7 +58,16 @@ const isPoa = (l: Listing) => /^(yes|true|1)$/i.test(l.priceOnApplication?.trim(
 
 /** Pre-signed storage links (S3, CloudFront, GCS) stop working minutes after the crawl. */
 const EXPIRING_URL = /[?&](x-amz-expires|x-amz-signature|expires|signature|x-goog-expires|se)=/i;
-const hasExpiringImages = (l: Listing) => (l.images ?? []).some((u) => EXPIRING_URL.test(u)) || EXPIRING_URL.test(l.agent?.photo ?? "");
+/** Per-listing cache: the URL regex over every photo of every listing is the costliest check. */
+const expiringCache = new WeakMap<Listing, boolean>();
+const hasExpiringImages = (l: Listing) => {
+  let v = expiringCache.get(l);
+  if (v === undefined) {
+    v = (l.images ?? []).some((u) => EXPIRING_URL.test(u)) || EXPIRING_URL.test(l.agent?.photo ?? "");
+    expiringCache.set(l, v);
+  }
+  return v;
+};
 const hasInlineImages = (l: Listing) => (l.images ?? []).some((u) => u.startsWith("data:")) || (l.agent?.photo ?? "").startsWith("data:");
 /** Ziba maps these codes to a generic "Residential"/building type with no details section. */
 const GENERIC_TYPE_CODES = new Set(["BU", "HO"]);
@@ -66,6 +76,16 @@ const ageDays = (l: Listing) => {
   const t = Date.parse(l.lastUpdate ?? "");
   return Number.isFinite(t) ? (Date.now() - t) / 86_400_000 : null;
 };
+
+/** checkFeed for several feeds, one at a time with a yield between them (dashboard readiness table). */
+export async function checkFeedsSliced(groups: Listing[][]): Promise<FeedCheckResult[]> {
+  const out: FeedCheckResult[] = [];
+  for (const g of groups) {
+    out.push(checkFeed(g));
+    await yieldToMain();
+  }
+  return out;
+}
 
 export function checkFeed(listings: Listing[]): FeedCheckResult {
   // Each listing is checked against its own market (a feed may mix countries).
@@ -333,6 +353,18 @@ const DROP_REASONS: [string, (l: Listing) => boolean][] = [
   // skip_policy.py: property_name and description_en are core fields that enrichment can't fill.
   ["No property name or description", (l) => !l.propertyName?.trim() || !l.description?.trim()],
 ];
+
+/** importForecast in slices, so a whole workspace never freezes the page. */
+export async function importForecastSliced(listings: Listing[]): Promise<ImportForecast> {
+  const counts = new Map<string, number>();
+  let publishable = 0;
+  await forEachSliced(listings, (l) => {
+    const hit = DROP_REASONS.find(([, test]) => test(l));
+    if (hit) counts.set(hit[0], (counts.get(hit[0]) ?? 0) + 1);
+    else publishable++;
+  });
+  return { publishable, dropped: DROP_REASONS.map(([reason]) => ({ reason, count: counts.get(reason) ?? 0 })).filter((d) => d.count > 0) };
+}
 
 /** Estimate of how many listings will publish on Ziba. Broken image URLs can only be seen after import. */
 export function importForecast(listings: Listing[]): ImportForecast {

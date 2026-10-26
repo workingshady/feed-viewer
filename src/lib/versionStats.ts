@@ -1,3 +1,4 @@
+import { forEachSliced } from "@/lib/yieldToMain";
 import { inMarketBounds, marketOf } from "@/lib/markets";
 import type { Listing } from "@/lib/types";
 import { annualizedPrice } from "@/lib/feedValidation";
@@ -45,7 +46,18 @@ function hasValidCoords(l: Listing): boolean {
 
 const isPoa = (l: Listing) => /^(yes|true|1)$/i.test(l.priceOnApplication?.trim() ?? "");
 
+/** Listing objects are immutable once loaded, so each one's quality is computed once and reused by every page. */
+const qualityCache = new WeakMap<Listing, { score: number; failed: QualityCheckKey[] }>();
+
 export function listingQuality(l: Listing): { score: number; failed: QualityCheckKey[] } {
+  const hit = qualityCache.get(l);
+  if (hit) return hit;
+  const q = computeQuality(l);
+  qualityCache.set(l, q);
+  return q;
+}
+
+function computeQuality(l: Listing): { score: number; failed: QualityCheckKey[] } {
   let score = 0;
   const failed: QualityCheckKey[] = [];
   for (const c of QUALITY_CHECKS) {
@@ -62,7 +74,8 @@ function median(values: number[]): number | null {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-export function computeVersionStats(listings: Listing[]): VersionStats {
+/** Incremental stats: add listings one by one, then read the result (lets big sets be processed in slices). */
+function statsAccumulator() {
   const passCounts = Object.fromEntries(QUALITY_CHECKS.map((c) => [c.key, 0])) as Record<QualityCheckKey, number>;
   const purpose = { sale: 0, rent: 0, unknown: 0 };
   const prices = { sale: [] as number[], rent: [] as number[] };
@@ -70,29 +83,46 @@ export function computeVersionStats(listings: Listing[]): VersionStats {
   const communities = new Set<string>();
   const agents = new Set<string>();
   let total = 0;
-
-  for (const l of listings) {
-    const { score, failed } = listingQuality(l);
-    total += score;
-    for (const c of QUALITY_CHECKS) if (!failed.includes(c.key)) passCounts[c.key]++;
-    purpose[l.purpose] = (purpose[l.purpose] ?? 0) + 1;
-    if (l.price > 0 && (l.purpose === "sale" || l.purpose === "rent")) prices[l.purpose].push(annualizedPrice(l));
-    if (l.propertyType) types.set(l.propertyType, (types.get(l.propertyType) ?? 0) + 1);
-    if (l.community) communities.add(l.community.trim().toLowerCase());
-    const agentKey = l.agent?.email?.trim().toLowerCase() || l.agent?.name?.trim().toLowerCase();
-    if (agentKey) agents.add(agentKey);
-  }
-
-  const n = listings.length || 1;
+  let n = 0;
   return {
-    score: Math.round(total / n),
-    checks: Object.fromEntries(QUALITY_CHECKS.map((c) => [c.key, passCounts[c.key] / n])) as Record<QualityCheckKey, number>,
-    purpose,
-    medianPrice: { sale: median(prices.sale), rent: median(prices.rent) },
-    topPropertyTypes: [...types.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
-    communities: communities.size,
-    agents: agents.size,
+    add(l: Listing) {
+      n++;
+      const { score, failed } = listingQuality(l);
+      total += score;
+      for (const c of QUALITY_CHECKS) if (!failed.includes(c.key)) passCounts[c.key]++;
+      purpose[l.purpose] = (purpose[l.purpose] ?? 0) + 1;
+      if (l.price > 0 && (l.purpose === "sale" || l.purpose === "rent")) prices[l.purpose].push(annualizedPrice(l));
+      if (l.propertyType) types.set(l.propertyType, (types.get(l.propertyType) ?? 0) + 1);
+      if (l.community) communities.add(l.community.trim().toLowerCase());
+      const agentKey = l.agent?.email?.trim().toLowerCase() || l.agent?.name?.trim().toLowerCase();
+      if (agentKey) agents.add(agentKey);
+    },
+    result(): VersionStats {
+      const d = n || 1;
+      return {
+        score: Math.round(total / d),
+        checks: Object.fromEntries(QUALITY_CHECKS.map((c) => [c.key, passCounts[c.key] / d])) as Record<QualityCheckKey, number>,
+        purpose,
+        medianPrice: { sale: median(prices.sale), rent: median(prices.rent) },
+        topPropertyTypes: [...types.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+        communities: communities.size,
+        agents: agents.size,
+      };
+    },
   };
+}
+
+export function computeVersionStats(listings: Listing[]): VersionStats {
+  const acc = statsAccumulator();
+  for (const l of listings) acc.add(l);
+  return acc.result();
+}
+
+/** Same as computeVersionStats, yielding to the browser between slices (for whole-workspace stats). */
+export async function computeVersionStatsSliced(listings: Listing[]): Promise<VersionStats> {
+  const acc = statsAccumulator();
+  await forEachSliced(listings, (l) => acc.add(l));
+  return acc.result();
 }
 
 /** CSV of listings failing at least one quality check, worst first. */

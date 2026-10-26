@@ -12,8 +12,12 @@ async function fetchGzipText(url: string): Promise<string> {
   if (!res.ok) throw new Error(`Could not download version file (HTTP ${res.status})`);
   const bytes = new Uint8Array(await res.arrayBuffer());
   // Some CDNs transparently decompress; only gunzip when the gzip magic bytes are present.
-  const raw = bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes;
-  return strFromU8(raw);
+  if (!(bytes[0] === 0x1f && bytes[1] === 0x8b)) return strFromU8(bytes);
+  // The browser's streaming decompressor runs off the main thread; large feeds no longer freeze the page.
+  if (typeof DecompressionStream !== "undefined") {
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  }
+  return strFromU8(gunzipSync(bytes));
 }
 
 function cached<T>(key: string, load: () => Promise<T>): Promise<T> {

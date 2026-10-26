@@ -42,8 +42,9 @@ export function computeFilteredPriceStats(listings: Listing[]): FilteredPriceSta
     count,
     pricedCount,
     avg: sum / pricedCount,
-    min: Math.min(...values),
-    max: Math.max(...values),
+    // reduce, not Math.min(...values): spreading 100k+ prices can overflow the call stack.
+    min: values.reduce((a, b) => (b < a ? b : a), Infinity),
+    max: values.reduce((a, b) => (b > a ? b : a), -Infinity),
     currency,
     sale,
     rent,

@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowRight, Info, XCircle } from "lucide-react";
 import { ChartCard } from "@/components/charts/ChartKit";
-import { checkFeed, type Severity } from "@/lib/feedValidation";
+import { checkFeedsSliced, type Severity } from "@/lib/feedValidation";
+import { useSlicedMemo } from "@/lib/yieldToMain";
 import type { SourceDTO } from "@/lib/sourcesApi";
 import type { Listing } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -36,23 +37,24 @@ const ICON: Record<Severity, { icon: typeof Info; cls: string; label: string }> 
 
 /** Per source: expected listings on Ziba, what holds the rest back, and the flags worth a look before import. */
 export function ImportReadiness({ sources, listings }: { sources: SourceDTO[]; listings: Listing[] }) {
-  const rows = useMemo(() => {
-    const bySource = new Map<string, Listing[]>();
-    for (const l of listings) {
-      const k = l.sourceAgency ?? "";
-      if (!bySource.has(k)) bySource.set(k, []);
-      bySource.get(k)!.push(l);
-    }
-    return sources
-      .filter((s) => bySource.has(s.name))
-      .map((s) => {
-        const ls = bySource.get(s.name)!;
-        const r = checkFeed(ls);
-        const flags = r.issues.filter((i) => WATCH.has(i.code));
-        return { source: s, total: ls.length, forecast: r.forecast!, flags };
-      })
-      .sort((a, b) => a.forecast.publishable / a.total - b.forecast.publishable / b.total);
-  }, [sources, listings]);
+  // Every feed check over every listing: run feed by feed, yielding in between, so the page never freezes.
+  const rows =
+    useSlicedMemo(async () => {
+      const bySource = new Map<string, Listing[]>();
+      for (const l of listings) {
+        const k = l.sourceAgency ?? "";
+        if (!bySource.has(k)) bySource.set(k, []);
+        bySource.get(k)!.push(l);
+      }
+      const present = sources.filter((s) => bySource.has(s.name));
+      const results = await checkFeedsSliced(present.map((s) => bySource.get(s.name)!));
+      return present
+        .map((s, i) => {
+          const r = results[i];
+          return { source: s, total: bySource.get(s.name)!.length, forecast: r.forecast!, flags: r.issues.filter((x) => WATCH.has(x.code)) };
+        })
+        .sort((a, b) => a.forecast.publishable / a.total - b.forecast.publishable / b.total);
+    }, [sources, listings]) ?? [];
 
   const [showAll, setShowAll] = useState(false);
   if (!rows.length) return null;

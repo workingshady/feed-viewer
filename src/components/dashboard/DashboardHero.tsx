@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { ArrowRight, BarChart3, GitCompare, Sparkles, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { timeAgo } from "@/components/sources/format";
-import { importForecast } from "@/lib/feedValidation";
+import { importForecastSliced } from "@/lib/feedValidation";
+import { useSlicedMemo } from "@/lib/yieldToMain";
 import type { SourceDTO } from "@/lib/sourcesApi";
 import type { Listing } from "@/lib/types";
 
@@ -66,11 +67,12 @@ export function DashboardHero({
         (b.versions.find((v) => v.id === b.activeVersionId)?.listingCount ?? 0) -
         (a.versions.find((v) => v.id === a.activeVersionId)?.listingCount ?? 0),
     )[0];
-    const forecast = listings.length ? importForecast(listings) : null;
-    return { newest, biggest, forecast };
-  }, [sources, listings]);
+    return { newest, biggest };
+  }, [sources]);
+  // Every listing is checked; in slices, so the greeting renders at once and the figure follows.
+  const forecast = useSlicedMemo(async () => (listings.length ? importForecastSliced(listings) : null), [listings]);
 
-  const pct = facts.forecast && listings.length ? Math.round((facts.forecast.publishable / listings.length) * 100) : null;
+  const pct = forecast && listings.length ? Math.round((forecast.publishable / listings.length) * 100) : null;
 
   return (
     <section
