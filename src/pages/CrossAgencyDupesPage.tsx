@@ -2,7 +2,11 @@ import AppHeader from "@/components/AppHeader";
 import { AgencyLogo } from "@/components/AgencyLogo";
 import { ChartCard, Columns, HBars, SERIES } from "@/components/charts/ChartKit";
 import { EvidenceList, ScoreMeter } from "@/components/compare/MatchEvidence";
-import { SearchableSelect, Segmented } from "@/components/listings/FilterControls";
+import { ChipChoice, SearchableSelect, Segmented, ToggleChip } from "@/components/listings/FilterControls";
+import { useDecide } from "@/hooks/useMatching";
+import { snapshotOf } from "@/lib/matchSnapshot";
+import { hasRole } from "@/lib/roles";
+import { useAuth } from "@/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { prepareCompareTrayFromIds } from "@/lib/compareSelection";
@@ -43,6 +47,34 @@ const TIER: Record<Tier, { label: string; hint: string; icon: typeof ShieldCheck
 
 const PAGE = 24;
 
+type SortKey = "confidence" | "least" | "borderline" | "spread" | "agencies" | "price" | "size";
+/** open = everything except groups marked "not the same". */
+type ReviewFilter = "open" | "unreviewed" | "same" | "different" | "all";
+
+const SORTS: { value: SortKey; label: string }[] = [
+  { value: "confidence", label: "Most certain first" },
+  { value: "least", label: "Lowest score first" },
+  { value: "borderline", label: "Borderline first (closest to the cut-off)" },
+  { value: "spread", label: "Biggest price gap" },
+  { value: "agencies", label: "Most agencies" },
+  { value: "price", label: "Highest price" },
+  { value: "size", label: "Largest size" },
+];
+
+const has = (g: Group, signal: string, positive = true) => g.evidence.some((e) => e.signal === signal && (positive ? e.weight > 0 : e.weight < 0));
+
+type EvidenceFilter = "size" | "price" | "building" | "pin" | "description" | "photos" | "conflicts" | "gap";
+const EVIDENCE_FILTERS: { key: EvidenceFilter; label: string; test: (g: Group) => boolean }[] = [
+  { key: "size", label: "Same size", test: (g) => g.evidence.some((e) => e.signal === "area" && e.weight > 1.5) },
+  { key: "price", label: "Same price", test: (g) => g.evidence.some((e) => e.signal === "price" && e.label === "Same price") },
+  { key: "building", label: "Same building", test: (g) => has(g, "building") },
+  { key: "pin", label: "Same map pin", test: (g) => g.evidence.some((e) => e.signal === "location" && e.label === "Same map pin") },
+  { key: "description", label: "Similar description", test: (g) => has(g, "description") },
+  { key: "photos", label: "Photos match", test: (g) => has(g, "photos") },
+  { key: "conflicts", label: "Has contradictions", test: (g) => g.evidence.some((e) => e.weight < 0) },
+  { key: "gap", label: "Price gap over 5%", test: (g) => (g.priceSpread ?? 0) > 0.05 },
+];
+
 /** What is stored per (live versions, model): indexes into the agency lists, not listings. */
 type CachedRun = { clusters: WireCluster[]; possible: WireCluster[]; compared: number; ms: number };
 
@@ -76,6 +108,7 @@ function toGroups(clusters: WireCluster[], names: string[], lists: Listing[][], 
 export default function CrossAgencyDupesPage() {
   const { listingsByAgency, sources, isLoading, matchModelKey } = useAppData();
   const { overrides, byKey, isLoading: decisionsLoading } = useMatchDecisions();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [run, setRun] = useState(0);
   const [state, setState] = useState<{ groups: Group[]; compared: number; ms: number; savedAt: number } | { error: string } | null>(null);
@@ -138,12 +171,21 @@ export default function CrossAgencyDupesPage() {
 
   const [tier, setTier] = useState<Tier | "all">("all");
   const [agency, setAgency] = useState("all");
+  const [agency2, setAgency2] = useState("all");
   const [purpose, setPurpose] = useState("all");
+  const [ptype, setPtype] = useState("all");
+  const [beds, setBeds] = useState("");
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState<"confidence" | "spread" | "agencies">("confidence");
+  const [sort, setSort] = useState<SortKey>("confidence");
+  const [review, setReview] = useState<ReviewFilter>("open");
+  const [scoreMin, setScoreMin] = useState("");
+  const [scoreMax, setScoreMax] = useState("");
+  const [evidence, setEvidence] = useState<EvidenceFilter[]>([]);
+  const [showMore, setShowMore] = useState(false);
   const [shown, setShown] = useState(PAGE);
-  const [showDismissed, setShowDismissed] = useState(false);
+  const [focus, setFocus] = useState(0);
   const decisionOf = (g: Group) => byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict;
+  const decide = useDecide();
 
   // A reviewer's "same" confirms a group immediately, without recomputing.
   const groups = useMemo(
@@ -155,26 +197,122 @@ export default function CrossAgencyDupesPage() {
   );
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
-    const out = groups.filter(
-      (g) =>
-        (showDismissed || byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict !== "different") &&
-        (tier === "all" || g.tier === tier) &&
-        (agency === "all" || g.agencies.includes(agency)) &&
-        (purpose === "all" || g.purpose === purpose) &&
-        (!query ||
-          g.items.some((x) => `${x.listing.title} ${x.listing.reference} ${x.listing.community} ${x.listing.propertyName} ${x.listing.permitNumber}`.toLowerCase().includes(query))),
-    );
+    const lo = scoreMin === "" ? -Infinity : Number(scoreMin);
+    const hi = scoreMax === "" ? Infinity : Number(scoreMax);
+    const bedsNum = beds === "" ? null : parseInt(beds, 10);
+    const tests = EVIDENCE_FILTERS.filter((f) => evidence.includes(f.key)).map((f) => f.test);
+    const out = groups.filter((g) => {
+      const v = byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict;
+      if (review === "open" && v === "different") return false;
+      if (review === "unreviewed" && v) return false;
+      if (review === "same" && v !== "same") return false;
+      if (review === "different" && v !== "different") return false;
+      if (tier !== "all" && g.tier !== tier) return false;
+      if (agency !== "all" && !g.agencies.includes(agency)) return false;
+      if (agency2 !== "all" && !g.agencies.includes(agency2)) return false;
+      if (purpose !== "all" && g.purpose !== purpose) return false;
+      if (ptype !== "all" && (g.items[0].listing.propertyType || "Other") !== ptype) return false;
+      if (bedsNum != null) {
+        const b0 = g.items[0].listing.beds;
+        if (beds.endsWith("+") ? !(b0 >= bedsNum) : b0 !== bedsNum) return false;
+      }
+      if (g.score < lo || g.score > hi) return false;
+      for (const t of tests) if (!t(g)) return false;
+      return (
+        !query ||
+        g.items.some((x) => `${x.listing.title} ${x.listing.reference} ${x.listing.community} ${x.listing.propertyName} ${x.listing.permitNumber}`.toLowerCase().includes(query))
+      );
+    });
     const order = { permit: 0, possible: 1 };
-    out.sort((a, b) =>
-      sort === "spread"
-        ? (b.priceSpread ?? -1) - (a.priceSpread ?? -1)
-        : sort === "agencies"
-          ? b.agencies.length - a.agencies.length || b.score - a.score
-          : order[a.tier] - order[b.tier] || b.score - a.score,
-    );
+    const cut = getMatchWeights().agencies.possible;
+    const price = (g: Group) => Math.max(...g.items.map((x) => x.listing.price || 0));
+    const area = (g: Group) => Math.max(...g.items.map((x) => x.listing.area || 0));
+    out.sort((a, b) => {
+      switch (sort) {
+        case "least":
+          return a.score - b.score;
+        case "borderline":
+          return Math.abs(a.score - cut) - Math.abs(b.score - cut);
+        case "spread":
+          return (b.priceSpread ?? -1) - (a.priceSpread ?? -1);
+        case "agencies":
+          return b.agencies.length - a.agencies.length || b.score - a.score;
+        case "price":
+          return price(b) - price(a);
+        case "size":
+          return area(b) - area(a);
+        default:
+          return order[a.tier] - order[b.tier] || b.score - a.score;
+      }
+    });
     return out;
-  }, [groups, tier, agency, purpose, q, sort, byKey, showDismissed]);
-  useEffect(() => setShown(PAGE), [tier, agency, purpose, q, sort]);
+  }, [groups, tier, agency, agency2, purpose, ptype, beds, q, sort, byKey, review, scoreMin, scoreMax, evidence]);
+  useEffect(() => {
+    setShown(PAGE);
+    setFocus(0);
+  }, [tier, agency, agency2, purpose, ptype, beds, q, sort, review, scoreMin, scoreMax, evidence]);
+
+  // Review progress over the queue (pairs without a shared permit).
+  const progress = useMemo(() => {
+    const queue = groups.filter((g) => g.tier === "possible" || byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict === "same");
+    const reviewed = queue.filter((g) => byKey.has(pairKey(g.items.map((x) => x.listing.id)))).length;
+    return { total: queue.length, reviewed };
+  }, [groups, byKey]);
+
+  const typeOptions = useMemo(() => {
+    const c = new Map<string, number>();
+    for (const g of groups) {
+      const t = g.items[0].listing.propertyType || "Other";
+      c.set(t, (c.get(t) ?? 0) + 1);
+    }
+    return [...c.entries()].sort((a, b) => b[1] - a[1]).map(([value, count]) => ({ value, label: value, count }));
+  }, [groups]);
+
+  // Keyboard review: J/K move, S same, N not the same, C compare. Ignored while typing.
+  const canDecide = hasRole(user?.role, "editor");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey || (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable))) return;
+      const g = filtered[focus];
+      const k = e.key.toLowerCase();
+      if (k === "j") {
+        setFocus((i) => Math.min(filtered.length - 1, i + 1));
+        if (focus + 1 >= shown) setShown((n) => n + PAGE);
+      } else if (k === "k") setFocus((i) => Math.max(0, i - 1));
+      else if (g && canDecide && (k === "s" || k === "n")) {
+        const ids = g.items.map((x) => x.listing.id);
+        const verdict = k === "s" ? "same" : "different";
+        const current = byKey.get(pairKey(ids))?.verdict;
+        decide.mutate({ listingIds: ids, verdict: current === verdict ? null : verdict, context: "agencies", snapshot: g.items.slice(0, 12).map((x) => snapshotOf(x.listing)) });
+        // Advance unless the decided group leaves the list on its own (unreviewed filter).
+        if (review !== "unreviewed") setFocus((i) => Math.min(filtered.length - 1, i + 1));
+      } else if (g && k === "c") {
+        if (prepareCompareTrayFromIds(g.items.map((x) => x.listing.id))) navigate("/compare");
+      } else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filtered, focus, shown, canDecide, byKey, decide, review, navigate]);
+  useEffect(() => {
+    document.getElementById(`group-${filtered[focus]?.key}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focus, filtered]);
+  const activeFilters =
+    (agency2 !== "all" ? 1 : 0) + (ptype !== "all" ? 1 : 0) + (beds ? 1 : 0) + (scoreMin ? 1 : 0) + (scoreMax ? 1 : 0) + evidence.length;
+  const clearFilters = () => {
+    setTier("all");
+    setAgency("all");
+    setAgency2("all");
+    setPurpose("all");
+    setPtype("all");
+    setBeds("");
+    setQ("");
+    setReview("open");
+    setScoreMin("");
+    setScoreMax("");
+    setEvidence([]);
+  };
 
   const insights = useMemo(() => {
     const confirmed = groups.filter((g) => g.tier !== "possible");
@@ -324,43 +462,143 @@ export default function CrossAgencyDupesPage() {
               </section>
             )}
 
-            <section className="flex flex-wrap items-center gap-2" aria-label="Filters">
-              <div className="relative w-full sm:w-72">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Title, reference, permit, building…" className="h-9 pl-9 text-sm" />
+            <section className="space-y-3 rounded-2xl border border-border bg-card p-3 shadow-[var(--shadow-card)]" aria-label="Review queue controls">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-[14rem] flex-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-foreground">
+                      Reviewed {progress.reviewed.toLocaleString()} of {progress.total.toLocaleString()} needing review
+                    </span>
+                    <span className="tabular-nums text-muted-foreground">{progress.total ? Math.round((progress.reviewed / progress.total) * 100) : 0}%</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden>
+                    <div className="h-full rounded-full bg-success" style={{ width: `${progress.total ? (progress.reviewed / progress.total) * 100 : 0}%` }} />
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setTier("possible");
+                    setReview("unreviewed");
+                    setSort("borderline");
+                  }}
+                >
+                  Start reviewing
+                </Button>
+                <span className="hidden text-[11px] text-muted-foreground lg:inline">
+                  Keys: <kbd className="rounded border border-border px-1">J</kbd>/<kbd className="rounded border border-border px-1">K</kbd> move ·{" "}
+                  <kbd className="rounded border border-border px-1">S</kbd> same · <kbd className="rounded border border-border px-1">N</kbd> not the same ·{" "}
+                  <kbd className="rounded border border-border px-1">C</kbd> compare
+                </span>
               </div>
-              <Segmented
-                label="Confidence"
-                value={tier}
-                onChange={(v) => setTier(v as Tier | "all")}
-                options={[{ value: "all", label: "All" }, ...(["permit", "possible"] as Tier[]).map((t) => ({ value: t, label: TIER[t].label, count: insights.counts[t] }))]}
-              />
-              <Segmented label="Purpose" value={purpose} onChange={setPurpose} options={[{ value: "all", label: "All" }, { value: "sale", label: "Sale" }, { value: "rent", label: "Rent" }]} />
-              <SearchableSelect placeholder="Agency" allLabel="Any agency" icon={<Building2 className="h-3.5 w-3.5" aria-hidden />} value={agency} onChange={setAgency} options={agencyOptions} />
-              <Segmented
-                label="Sort"
-                value={sort}
-                onChange={(v) => setSort(v as typeof sort)}
-                options={[
-                  { value: "confidence", label: "Most certain" },
-                  { value: "spread", label: "Biggest price gap" },
-                  { value: "agencies", label: "Most agencies" },
-                ]}
-              />
-              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                <input type="checkbox" checked={showDismissed} onChange={(e) => setShowDismissed(e.target.checked)} className="accent-[hsl(var(--primary))]" />
-                Show groups marked "not the same"
-              </label>
-              <span className="ml-auto text-xs tabular-nums text-muted-foreground">{filtered.length.toLocaleString()} properties</span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Title, reference, permit, building…" className="h-9 pl-9 text-sm" />
+                </div>
+                <Segmented
+                  label="Confidence"
+                  value={tier}
+                  onChange={(v) => setTier(v as Tier | "all")}
+                  options={[{ value: "all", label: "All" }, ...(["permit", "possible"] as Tier[]).map((t) => ({ value: t, label: TIER[t].label, count: insights.counts[t] }))]}
+                />
+                <Segmented
+                  label="Review status"
+                  value={review}
+                  onChange={(v) => setReview(v as ReviewFilter)}
+                  options={[
+                    { value: "open", label: "Open" },
+                    { value: "unreviewed", label: "Unreviewed" },
+                    { value: "same", label: "Marked same" },
+                    { value: "different", label: "Marked not same" },
+                    { value: "all", label: "All" },
+                  ]}
+                />
+                <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                  Sort
+                  <select
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as SortKey)}
+                    className="h-9 rounded-full border border-border bg-card px-3 text-xs text-foreground"
+                    aria-label="Sort"
+                  >
+                    {SORTS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Button size="sm" variant="outline" aria-expanded={showMore} className={cn("h-9 rounded-full", (showMore || activeFilters > 0) && "border-primary/35 bg-primary/10 text-primary-text")} onClick={() => setShowMore((v) => !v)}>
+                  More filters{activeFilters ? ` (${activeFilters})` : ""}
+                </Button>
+                <span className="ml-auto text-xs tabular-nums text-muted-foreground">{filtered.length.toLocaleString()} properties</span>
+              </div>
+
+              {showMore && (
+                <div className="grid gap-4 border-t border-border pt-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Agencies</div>
+                    <SearchableSelect placeholder="Agency" allLabel="Any agency" icon={<Building2 className="h-3.5 w-3.5" aria-hidden />} value={agency} onChange={setAgency} options={agencyOptions} />
+                    <SearchableSelect placeholder="With agency" allLabel="…with any other agency" value={agency2} onChange={setAgency2} options={agencyOptions} />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Property</div>
+                    <Segmented label="Purpose" value={purpose} onChange={setPurpose} options={[{ value: "all", label: "All" }, { value: "sale", label: "Sale" }, { value: "rent", label: "Rent" }]} />
+                    <SearchableSelect placeholder="Type" allLabel="Any type" value={ptype} onChange={setPtype} options={typeOptions} />
+                    <ChipChoice
+                      label="Bedrooms"
+                      value={beds}
+                      onChange={setBeds}
+                      options={[{ value: "0", label: "Studio" }, ...["1", "2", "3", "4"].map((n) => ({ value: n, label: n })), { value: "5+", label: "5+" }]}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Score</div>
+                    <div className="flex items-center gap-2">
+                      <Input inputMode="decimal" placeholder="Min" value={scoreMin} onChange={(e) => setScoreMin(e.target.value.replace(/[^\d.-]/g, ""))} className="h-9 w-24 text-sm" />
+                      <span className="text-muted-foreground">–</span>
+                      <Input inputMode="decimal" placeholder="Max" value={scoreMax} onChange={(e) => setScoreMax(e.target.value.replace(/[^\d.-]/g, ""))} className="h-9 w-24 text-sm" />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Review cut-off {getMatchWeights().agencies.possible}; a shared permit adds 12.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Evidence</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {EVIDENCE_FILTERS.map((f) => (
+                        <ToggleChip
+                          key={f.key}
+                          on={evidence.includes(f.key)}
+                          onToggle={() => setEvidence((p) => (p.includes(f.key) ? p.filter((x) => x !== f.key) : [...p, f.key]))}
+                          count={groups.filter(f.test).length}
+                        >
+                          {f.label}
+                        </ToggleChip>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="md:col-span-2 xl:col-span-4">
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={clearFilters}>
+                      Clear all filters
+                    </Button>
+                  </div>
+                </div>
+              )}
             </section>
 
             {filtered.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">No properties match these filters.</p>
             ) : (
               <ul className="space-y-3">
-                {filtered.slice(0, shown).map((g) => (
+                {filtered.slice(0, shown).map((g, i) => (
                   <GroupCard
                     key={g.key}
+                    focused={i === focus}
+                    onFocus={() => setFocus(i)}
                     g={g}
                     logo={logo}
                     onCompare={() => {
@@ -467,10 +705,29 @@ function Kpi({ label, value, hint, active, onClick }: { label: string; value: nu
   );
 }
 
-function GroupCard({ g, logo, onCompare }: { g: Group; logo: Map<string, string | undefined>; onCompare: () => void }) {
+function GroupCard({
+  g,
+  logo,
+  onCompare,
+  focused,
+  onFocus,
+}: {
+  g: Group;
+  logo: Map<string, string | undefined>;
+  onCompare: () => void;
+  focused: boolean;
+  onFocus: () => void;
+}) {
   const T = TIER[g.tier];
   return (
-    <li className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
+    <li
+      id={`group-${g.key}`}
+      onClick={onFocus}
+      className={cn(
+        "scroll-mt-24 space-y-3 rounded-2xl border bg-card p-4 shadow-[var(--shadow-card)] transition-colors",
+        focused ? "border-primary/50 ring-2 ring-primary/25" : "border-border",
+      )}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset", T.tone)}>
           <T.icon className="h-3 w-3" aria-hidden /> {T.label}

@@ -43,9 +43,14 @@ export type ContextMetrics = {
   /** Same measurement with the currently active model, for the gate. */
   currentPrecision: number;
   currentRecall: number;
-  /** Agreement with reviewer decisions (share of labels the model gets right), when labels exist. */
-  reviewAgreement: number | null;
-  currentReviewAgreement: number | null;
+  /**
+   * Ranking quality on reviewer verdicts (AUC): the chance a pair a reviewer marked "same" scores above
+   * one marked "not the same". 1 = perfect, 0.5 = random. Null until there are enough of both.
+   */
+  reviewAuc: number | null;
+  currentReviewAuc: number | null;
+  /** Share of reviewed pairs that reviewers confirmed: the precision of the review queue, measured by people. */
+  reviewSameShare: number | null;
   reviewLabels: number;
 };
 
@@ -202,19 +207,45 @@ function lowest(at: (t: number) => { precision: number; tp: number }, target: nu
   return fallback;
 }
 
-/** Share of reviewer labels the model agrees with (match vs not), using each label's context. */
-function reviewAgreement(labels: ReviewLabel[], byId: Map<string, Prepared>, tables: ModelTables) {
-  let ok = 0;
-  let n = 0;
+/**
+ * Lowest review cut-off at which at least half of the reviewed pairs scoring above it were confirmed
+ * by people. Needs 30+ verdicts; only ever raises the floor it is given.
+ */
+function queueCutoff(labels: ReviewLabel[], byId: Map<string, Prepared>, table: WeightTable, floor: number) {
+  const scored: { s: number; same: boolean }[] = [];
+  for (const l of labels) {
+    const ps = l.listingIds.map((id) => byId.get(id)).filter((p): p is Prepared => !!p);
+    if (ps.length >= 2) scored.push({ s: scoreWith(ps[0], ps[1], table, "agencies").score, same: l.verdict === "same" });
+  }
+  if (scored.length < 30) return floor;
+  for (let t = floor; t <= 24; t += 0.5) {
+    const above = scored.filter((x) => x.s >= t);
+    if (above.length < 10) return floor;
+    if (above.filter((x) => x.same).length / above.length >= 0.5) return t;
+  }
+  return floor;
+}
+
+/**
+ * How well a model ranks reviewer verdicts: AUC over (same, not-the-same) pairs. Every reviewed pair
+ * came from the review queue, so "would the model auto-confirm it" is the wrong question; "does it
+ * score the confirmed ones higher" is the right one.
+ */
+function reviewQuality(labels: ReviewLabel[], byId: Map<string, Prepared>, tables: ModelTables) {
+  const same: number[] = [];
+  const diff: number[] = [];
   for (const l of labels) {
     const ps = l.listingIds.map((id) => byId.get(id)).filter((p): p is Prepared => !!p);
     if (ps.length < 2) continue;
-    const table = tables[l.context];
-    const r = scoreWith(ps[0], ps[1], table, l.context);
-    n++;
-    if ((r.verdict === "match") === (l.verdict === "same")) ok++;
+    const s = scoreWith(ps[0], ps[1], tables[l.context], l.context).score;
+    (l.verdict === "same" ? same : diff).push(s);
   }
-  return n ? { agreement: ok / n, n } : { agreement: null, n: 0 };
+  const n = same.length + diff.length;
+  const sameShare = n ? same.length / n : null;
+  if (same.length < 5 || diff.length < 5) return { auc: null, sameShare, n };
+  let wins = 0;
+  for (const x of same) for (const y of diff) wins += x > y ? 1 : x === y ? 0.5 : 0;
+  return { auc: wins / (same.length * diff.length), sameShare, n };
 }
 
 const f1 = (p: number, r: number) => (p + r ? (2 * p * r) / (p + r) : 0);
@@ -268,7 +299,10 @@ export function trainMatchModel(input: TrainingInput): TrainingResult {
   const vPossible = Math.min(vMatch - 0.5, lowest(vNew.at, 0.8, input.current.versions.possible));
   const draftA: WeightTable = { match: 0, possible: 0, weights: aWeights };
   const aNew = replayAgencies(agencyItems, draftA);
-  const aPossible = lowest(aNew.at, 0.35, input.current.agencies.possible);
+  const aPermitPossible = lowest(aNew.at, 0.35, input.current.agencies.possible);
+  // People's verdicts tune the review queue: if reviewers reject most pairs below some score, those
+  // pairs are noise, so the review cut-off moves above them (never below what permits support).
+  const aPossible = queueCutoff(input.labels.filter((l) => l.context === "agencies"), byId, draftA, aPermitPossible);
   const weights: ModelTables = {
     versions: { match: vMatch, possible: vPossible, weights: vWeights },
     // Across agencies a shared permit is required for "match" (enforced in the scorer); its score
@@ -282,8 +316,8 @@ export function trainMatchModel(input: TrainingInput): TrainingResult {
   const aCur = replayAgencies(agencyItems, input.current.agencies).at(input.current.agencies.possible);
   const vLabels = input.labels.filter((l) => l.context === "versions");
   const aLabels = input.labels.filter((l) => l.context === "agencies");
-  const revNewA = reviewAgreement(aLabels, byId, weights);
-  const revCurA = reviewAgreement(aLabels, byId, input.current);
+  const revNewA = reviewQuality(aLabels, byId, weights);
+  const revCurA = reviewQuality(aLabels, byId, input.current);
 
   const metrics: TrainingResult["metrics"] = {
     versions: {
@@ -293,8 +327,9 @@ export function trainMatchModel(input: TrainingInput): TrainingResult {
       negatives: vNeg.length,
       currentPrecision: vCur.precision,
       currentRecall: vCur.recall,
-      reviewAgreement: null,
-      currentReviewAgreement: null,
+      reviewAuc: null,
+      currentReviewAuc: null,
+      reviewSameShare: null,
       reviewLabels: vLabels.length,
     },
     agencies: {
@@ -304,9 +339,10 @@ export function trainMatchModel(input: TrainingInput): TrainingResult {
       negatives: aNeg.length,
       currentPrecision: aCur.precision,
       currentRecall: aCur.recall,
-      reviewAgreement: revNewA.agreement,
-      currentReviewAgreement: revCurA.agreement,
-      reviewLabels: aLabels.length,
+      reviewAuc: revNewA.auc,
+      currentReviewAuc: revCurA.auc,
+      reviewSameShare: revNewA.sameShare,
+      reviewLabels: revNewA.n,
     },
     trainedAt: new Date().toISOString(),
     sources: input.agencies.length,
@@ -314,13 +350,18 @@ export function trainMatchModel(input: TrainingInput): TrainingResult {
     gate: { passed: false, reason: "" },
   };
 
-  // Gate: never trade away precision; never get worse overall than the active model.
+  // Gate, relative to the active model measured on the same data (an absolute bar would compare
+  // different workspaces): never lose precision, never get worse overall, never rank reviewer
+  // verdicts worse — and only judge when there is enough evidence to judge on.
   const reasons: string[] = [];
-  if (vPos.length < 50) reasons.push("too few re-posted listings with permits to learn from");
-  if (vRes.precision < 0.93) reasons.push(`version precision ${(vRes.precision * 100).toFixed(1)}% is below 93%`);
-  if (f1(vRes.precision, vRes.recall) < f1(vCur.precision, vCur.recall) - 0.01) reasons.push("versions: worse than the active model");
-  if (revNewA.agreement != null && revCurA.agreement != null && revNewA.n >= 20 && revNewA.agreement < revCurA.agreement - 0.02) {
-    reasons.push("agrees with reviewers less than the active model");
+  const vReplayPositives = vNew.positives;
+  if (vPos.length < 50 || vReplayPositives < 30) reasons.push(`not enough re-posted listings with permits to judge yet (${vReplayPositives} found, 30 needed)`);
+  else {
+    if (vRes.precision < vCur.precision - 0.01) reasons.push(`re-post precision ${(vRes.precision * 100).toFixed(1)}% is below the active model's ${(vCur.precision * 100).toFixed(1)}%`);
+    if (f1(vRes.precision, vRes.recall) < f1(vCur.precision, vCur.recall) - 0.01) reasons.push("re-post matching is worse overall than the active model");
+  }
+  if (revNewA.auc != null && revCurA.auc != null && revNewA.auc < revCurA.auc - 0.02) {
+    reasons.push(`ranks your verdicts worse than the active model (${(revNewA.auc * 100).toFixed(0)}% vs ${(revCurA.auc * 100).toFixed(0)}%)`);
   }
   metrics.gate = reasons.length ? { passed: false, reason: reasons.join("; ") } : { passed: true, reason: "at least as accurate as the active model" };
   say("Done");

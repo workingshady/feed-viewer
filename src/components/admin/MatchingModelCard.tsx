@@ -28,7 +28,12 @@ function Metric({ label, m, hint }: { label: string; m?: ContextMetrics; hint: s
         <span className="text-xs text-muted-foreground">recall</span>
       </div>
       <div className="mt-1 text-[11px] text-muted-foreground">{hint}</div>
-      {m?.reviewAgreement != null && <div className="mt-1 text-[11px] text-muted-foreground">Agrees with {pct(m.reviewAgreement)} of {m.reviewLabels} reviewer verdicts</div>}
+      {m?.reviewLabels ? (
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          {m.reviewSameShare != null && `${pct(m.reviewSameShare)} of ${m.reviewLabels} reviewed pairs confirmed by people`}
+          {m.reviewAuc != null && ` · ranks your verdicts ${pct(m.reviewAuc)} right`}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -134,7 +139,9 @@ export function MatchingModelCard() {
                   <TableHead>Trained</TableHead>
                   <TableHead>Trigger</TableHead>
                   <TableHead className="text-right">Versions precision / recall</TableHead>
-                  <TableHead className="text-right">Reviewer agreement</TableHead>
+                  <TableHead className="text-right" title="How often a pair reviewers confirmed scores above one they rejected (50% = random)">
+                    Ranks your verdicts
+                  </TableHead>
                   <TableHead>Gate</TableHead>
                   <TableHead />
                 </TableRow>
@@ -150,9 +157,10 @@ export function MatchingModelCard() {
                     <TableCell className="text-right font-mono text-xs tabular-nums">
                       {pct(h.metrics.versions?.precision)} / {pct(h.metrics.versions?.recall)}
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs tabular-nums">{pct(h.metrics.agencies?.reviewAgreement)}</TableCell>
-                    <TableCell className="max-w-[18rem] truncate text-xs text-muted-foreground" title={h.metrics.gate?.reason}>
-                      {h.metrics.gate?.passed ? "passed" : "held back"}
+                    <TableCell className="text-right font-mono text-xs tabular-nums">{pct(h.metrics.agencies?.reviewAuc)}</TableCell>
+                    <TableCell className="max-w-[22rem] text-xs text-muted-foreground">
+                      <span className={h.metrics.gate?.passed ? "text-success" : "text-warning"}>{h.metrics.gate?.passed ? "passed" : "held back"}</span>
+                      {h.metrics.gate?.reason ? <span className="block truncate" title={h.metrics.gate.reason}>{h.metrics.gate.reason}</span> : null}
                     </TableCell>
                     <TableCell className="text-right">
                       {h.active ? (

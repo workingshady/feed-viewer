@@ -3,26 +3,9 @@ import { useDecide, useMatchDecisions } from "@/hooks/useMatching";
 import { pairKey, type MatchContext } from "@/lib/propertyMatch";
 import { hasRole } from "@/lib/roles";
 import { cn } from "@/lib/utils";
-import type { ListingSnapshot } from "@/lib/matchingApi";
+import { snapshotOf } from "@/lib/matchSnapshot";
 import type { Listing } from "@/lib/types";
 import { useAuth } from "@/providers/AuthProvider";
-
-/** What gets stored with a verdict, so the review log still reads after listings leave the feed. */
-function snapshotOf(l: Listing): ListingSnapshot {
-  return {
-    id: l.id,
-    agency: l.sourceAgency,
-    reference: l.reference || undefined,
-    title: (l.title || "").slice(0, 300) || undefined,
-    price: l.price > 0 ? l.price : undefined,
-    currency: l.currency || undefined,
-    image: l.images?.[0]?.slice(0, 1000),
-    community: l.community || undefined,
-    beds: Number.isFinite(l.beds) ? l.beds : undefined,
-    area: l.area > 0 ? Math.round(l.area) : undefined,
-    permit: l.permitNumber || undefined,
-  };
-}
 
 /**
  * Reviewer verdict on a suggested match: shared with the team, applied immediately, and used as
