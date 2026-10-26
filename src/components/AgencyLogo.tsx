@@ -3,11 +3,10 @@ import { cn } from "@/lib/utils";
 import { initialsOf, tintFor } from "@/lib/avatar";
 
 /**
- * Agency logo from the feed, on a white "logo plate" in both themes: brand wordmarks are drawn
- * for white backgrounds, and on a tinted or dark tile they lose contrast (dark text marks vanish).
+ * Agency logo from the feed, shown as the source image with no added plate or frame.
  * Many agency sites block hotlinking, so a failed or missing image falls back to tinted initials.
  *
- * `className` sizes the plate; the image is fitted inside with padding so wide wordmarks stay legible.
+ * `className` sizes the box; the image is fitted inside without cropping.
  */
 export function AgencyLogo({ src, name, className }: { src?: string | null; name: string; className?: string }) {
   const [failed, setFailed] = useState(false);
@@ -28,7 +27,7 @@ export function AgencyLogo({ src, name, className }: { src?: string | null; name
     );
   }
   return (
-    <span className={cn("flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white p-1.5 ring-1 ring-black/[0.06] dark:ring-white/10", className)}>
+    <span className={cn("flex shrink-0 items-center justify-center overflow-hidden", className)}>
       <img
         src={src}
         alt=""

@@ -13,8 +13,8 @@ type Props = {
 /**
  * Agent photo with the cases feeds actually send handled:
  * - portrait / square headshots fill the frame, anchored to the top so faces aren't cropped;
- * - landscape images are usually the agency logo used as a placeholder, so they are fitted on a
- *   white plate instead of being cropped into an unreadable strip;
+ * - landscape images are usually the agency logo used as a placeholder, so they are fitted whole,
+ *   as the source image, instead of being cropped into an unreadable strip;
  * - missing or hotlink-blocked images fall back to tinted initials, never a broken-image box.
  */
 export function PersonAvatar({ src, name, className, shape = "circle" }: Props) {
@@ -44,7 +44,7 @@ export function PersonAvatar({ src, name, className, shape = "circle" }: Props) 
   };
 
   return (
-    <span className={cn(base, landscape ? "bg-white" : "bg-muted")}>
+    <span className={cn(base, landscape ? "bg-transparent ring-0" : "bg-muted")}>
       <img
         src={src}
         alt=""
@@ -56,7 +56,7 @@ export function PersonAvatar({ src, name, className, shape = "circle" }: Props) 
         onError={() => setFailed(true)}
         className={cn(
           "absolute inset-0 h-full w-full",
-          landscape ? "object-contain p-[12%]" : "object-cover object-top",
+          landscape ? "object-contain" : "object-cover object-top",
         )}
       />
     </span>
