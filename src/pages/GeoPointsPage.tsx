@@ -1,10 +1,11 @@
-import { MARKETS, inMarketBounds, marketOf, type MarketCode } from "@/lib/markets";
+import { detectGeoOutliers, OUTLIER_KINDS, type OutlierKind } from "@/lib/geoOutliers";
+import { OutliersPanel } from "@/components/map/OutliersPanel";
+import { ChartCard, HBars, SERIES } from "@/components/charts/ChartKit";
 import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,7 +21,6 @@ import {
   removeCompareListingId,
 } from "@/lib/compareSelection";
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Focus,
@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { Listing } from "@/lib/types";
-import type { GeoPointsMapView } from "@/components/GeoPointsMap";
+import type { GeoPointsMapView, MapColorBy, MapDisplayMode } from "@/components/GeoPointsMap";
 
 const LazyGeoPointsMap = lazy(async () => {
   const mod = await import("@/components/GeoPointsMap");
@@ -177,23 +177,8 @@ function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: num
   return R * c;
 }
 
-function median(xs: number[]) {
-  if (xs.length === 0) return 0;
-  const a = [...xs].sort((p, q) => p - q);
-  const m = Math.floor(a.length / 2);
-  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
-}
 
-function mad(xs: number[], med: number) {
-  if (xs.length === 0) return 0;
-  return median(xs.map((x) => Math.abs(x - med)));
-}
 
-function modifiedZ(x: number, med: number, madVal: number) {
-  if (!Number.isFinite(x) || !Number.isFinite(med)) return 0;
-  if (!Number.isFinite(madVal) || madVal <= 0) return 0;
-  return (0.6745 * (x - med)) / madVal;
-}
 
 function topBuckets<T>(
   items: T[],
@@ -274,7 +259,7 @@ function listingAddressLine(l: Listing) {
 const GeoPointsPage = () => {
   const { listings: allListings, scope, setScope, listingsByAgency } = useAppData();
 
-  const [tab, setTab] = useState<"map" | "insights">("map");
+  const [tab, setTab] = useState<"map" | "outliers" | "insights">("map");
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("all");
   const [community, setCommunity] = useState("all");
@@ -288,11 +273,14 @@ const GeoPointsPage = () => {
   const [onlyWithVideo, setOnlyWithVideo] = useState(false);
   const [onlyWithCoords, setOnlyWithCoords] = useState(true);
   const [outlierMode, setOutlierMode] = useState<"all" | "outliers" | "non-outliers">("all");
+  const [outlierKinds, setOutlierKinds] = useState<Set<OutlierKind>>(() => new Set(Object.keys(OUTLIER_KINDS) as OutlierKind[]));
+  const [displayMode, setDisplayMode] = useState<"auto" | MapDisplayMode>("auto");
+  const [colorBy, setColorBy] = useState<MapColorBy>("purpose");
+  const [showRings, setShowRings] = useState(true);
   const [onlyInViewport, setOnlyInViewport] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
-  const [outliersOpen, setOutliersOpen] = useState(true);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [mapView, setMapView] = useState<GeoPointsMapView | null>(null);
   const [fitBoundsSignal, setFitBoundsSignal] = useState(0);
@@ -424,75 +412,14 @@ const GeoPointsPage = () => {
     );
   }, [baseFiltered]);
 
-  const outlierModel = useMemo(() => {
-    const outlierIds = new Set<string>();
-    const detailsById = new Map<string, { kmFromCenter: number; reasons: string[] }>();
-    let zeroZero = 0;
-    let duplicates = 0;
+  // Location and price outliers, judged within each listing's market (see lib/geoOutliers).
+  const geo = useMemo(() => detectGeoOutliers(withCoords), [withCoords]);
+  const outlierIds = useMemo(
+    () => new Set([...geo.byId.values()].filter((o) => o.flags.some((f) => outlierKinds.has(f.kind))).map((o) => o.listing.id)),
+    [geo, outlierKinds],
+  );
+  const shownOutliers = useMemo(() => new Map([...geo.byId].filter(([id]) => outlierIds.has(id))), [geo, outlierIds]);
 
-    // Duplicate coordinate clusters (rounded) are usually placeholders / defaults.
-    const coordKey = (p: { lat: number; lng: number }) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
-    const coordCounts = new Map<string, number>();
-    for (const l of withCoords) {
-      const k = coordKey({ lat: l.latitude!, lng: l.longitude! });
-      coordCounts.set(k, (coordCounts.get(k) ?? 0) + 1);
-    }
-
-    // Each market has its own cluster: centre and spread are measured within a market, so a
-    // Singapore listing is never an "outlier" just because the workspace is mostly UAE.
-    const byMarket = new Map<string, Listing[]>();
-    for (const l of withCoords) {
-      const code = marketOf(l).code;
-      const arr = byMarket.get(code);
-      if (arr) arr.push(l);
-      else byMarket.set(code, [l]);
-    }
-
-    for (const [code, group] of byMarket) {
-      const market = MARKETS[code as MarketCode];
-      const pts = group.map((l) => ({ id: l.id, lat: l.latitude!, lng: l.longitude! }));
-      // Robust centre (median) from the pins inside the market's box, so stray pins don't drag it.
-      const inside = pts.filter((p) => inMarketBounds(market, p.lat, p.lng));
-      const basis = inside.length ? inside : pts;
-      const latMed = median(basis.map((p) => p.lat));
-      const lngMed = median(basis.map((p) => p.lng));
-      const latMad = mad(basis.map((p) => p.lat), latMed);
-      const lngMad = mad(basis.map((p) => p.lng), lngMed);
-      const center = { lat: latMed, lng: lngMed };
-      const dists = basis.map((p) => haversineKm(center, p));
-      const dMed = median(dists);
-      const dMad = mad(dists, dMed);
-      const distThreshold = dMad > 0 ? dMed + 7 * dMad : Math.max(25, dMed * 4);
-
-      for (const p of pts) {
-        const reasons: string[] = [];
-        const kmFromCenter = haversineKm(center, p);
-        if (Math.abs(p.lat) < 1e-9 && Math.abs(p.lng) < 1e-9) {
-          reasons.push("Coords are (0,0) — placeholder");
-          zeroZero += 1;
-        } else if (!inMarketBounds(market, p.lat, p.lng)) {
-          reasons.push(`Outside ${market.name} — Ziba re-geocodes it from the address`);
-        }
-        const c = coordCounts.get(coordKey(p)) ?? 1;
-        if (c >= 10) {
-          reasons.push(`Repeated coordinates (${c} listings) — likely default`);
-          duplicates += 1;
-        }
-        const zLat = Math.abs(modifiedZ(p.lat, latMed, latMad));
-        const zLng = Math.abs(modifiedZ(p.lng, lngMed, lngMad));
-        if (zLat >= 10 || zLng >= 10) reasons.push("Lat/lng far from typical range");
-        if (kmFromCenter > distThreshold) reasons.push(`Far from the ${market.name} cluster (${kmFromCenter.toFixed(1)} km)`);
-
-        const isOutlier = reasons.some((r) => r.startsWith("Coords are (0,0)") || r.startsWith("Outside ") || r.startsWith("Far from the") || r === "Lat/lng far from typical range");
-        if (isOutlier) outlierIds.add(p.id);
-        if (reasons.length > 0) detailsById.set(p.id, { kmFromCenter, reasons });
-      }
-    }
-
-    return { outlierIds, detailsById, anomalies: { zeroZero, duplicates } };
-  }, [withCoords]);
-
-  const outlierIds = outlierModel.outlierIds;
 
   const filtered = useMemo(() => {
     if (outlierMode === "all") return baseFiltered;
@@ -582,25 +509,13 @@ const GeoPointsPage = () => {
     [withCoords],
   );
 
-  const topOutliers = useMemo(() => {
-    const out: Array<{ id: string; kmFromCenter: number; reasons: string[] }> = [];
-    for (const l of withCoords) {
-      if (!outlierIds.has(l.id)) continue;
-      const d = outlierModel.detailsById.get(l.id);
-      out.push({ id: l.id, kmFromCenter: d?.kmFromCenter ?? 0, reasons: d?.reasons ?? ["Outlier"] });
-    }
-    out.sort((a, b) => b.kmFromCenter - a.kmFromCenter);
-    return out.slice(0, 25);
-  }, [withCoords, outlierIds, outlierModel.detailsById]);
-
-  // Auto-expand outliers panel when it becomes relevant.
-  // Keeps the UI tidy when there are none, but surfaces issues immediately when they appear.
-  // (User can always collapse manually.)
-  useMemo(() => {
-    if (withCoords.length < 20) return;
-    if (outlierIds.size > 0 && !outliersOpen) setOutliersOpen(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outlierIds.size, withCoords.length]);
+  const outlierKindRows = useMemo(
+    () =>
+      (Object.keys(OUTLIER_KINDS) as OutlierKind[])
+        .map((k) => ({ kind: OUTLIER_KINDS[k].label, listings: geo.counts[k] }))
+        .filter((r) => r.listings > 0),
+    [geo],
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -844,10 +759,17 @@ const GeoPointsPage = () => {
         </div>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="w-full">
-          <TabsList className="grid w-full grid-cols-2 rounded-2xl h-12 mb-4">
+          <TabsList className="grid w-full grid-cols-3 rounded-2xl h-12 mb-4">
             <TabsTrigger value="map" className="gap-2">
               <MapPin className="w-4 h-4" aria-hidden />
               Map
+            </TabsTrigger>
+            <TabsTrigger value="outliers" className="gap-2">
+              <TriangleAlert className="w-4 h-4" aria-hidden />
+              Outliers
+              {outlierIds.size > 0 && (
+                <span className="rounded-full bg-destructive/15 px-1.5 text-[10px] font-semibold text-destructive tabular-nums">{outlierIds.size.toLocaleString()}</span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="insights" className="gap-2">
               <Table2 className="w-4 h-4" aria-hidden />
@@ -856,6 +778,52 @@ const GeoPointsPage = () => {
           </TabsList>
 
           <TabsContent value="map" className="mt-0">
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border bg-card px-3 py-2">
+              <span className="text-xs text-muted-foreground">Display</span>
+              <div role="radiogroup" aria-label="Display" className="inline-flex rounded-lg border p-0.5 text-xs">
+                {(
+                  [
+                    ["auto", "Auto"],
+                    ["clusters", "Clusters"],
+                    ["pins", "Every pin"],
+                    ["density", "Density"],
+                  ] as const
+                ).map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    role="radio"
+                    aria-checked={displayMode === v}
+                    onClick={() => setDisplayMode(v)}
+                    className={cn("rounded-md px-2.5 py-1", displayMode === v ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className="ml-2 text-xs text-muted-foreground">Colour by</span>
+              <Select value={colorBy} onValueChange={(v) => setColorBy(v as MapColorBy)} disabled={displayMode === "density"}>
+                <SelectTrigger className="h-8 w-[170px] rounded-lg text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="purpose">Sale or rent</SelectItem>
+                  <SelectItem value="ppsf">Price per sq ft</SelectItem>
+                  <SelectItem value="market">Market</SelectItem>
+                  <SelectItem value="outlier">Outlier status</SelectItem>
+                </SelectContent>
+              </Select>
+              <label className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <Switch checked={showRings} onCheckedChange={setShowRings} />
+                Market rings (95% of listings)
+              </label>
+              <span className="ml-auto text-[11px] text-muted-foreground">
+                {outlierIds.size.toLocaleString()} outliers ringed ·{" "}
+                <button type="button" className="underline-offset-2 hover:underline" onClick={() => setTab("outliers")}>
+                  review
+                </button>
+              </span>
+            </div>
             <div className="grid grid-cols-1 gap-4">
               <div className="relative rounded-[1.75rem] overflow-hidden border border-border shadow-[var(--shadow-card)]">
                 <Suspense
@@ -868,6 +836,11 @@ const GeoPointsPage = () => {
                 >
                   <LazyGeoPointsMap
                     listings={filteredInViewport}
+                    mode={displayMode === "auto" ? undefined : displayMode}
+                    colorBy={colorBy}
+                    outliers={shownOutliers}
+                    clusters={geo.clusters}
+                    showRings={showRings}
                     selectedId={selectedId}
                     onHoverListingIdChange={(id) => {
                       // Don't replace a locked selection with hover noise.
@@ -951,6 +924,15 @@ const GeoPointsPage = () => {
                             window.location.href = `/listing/${encodeURIComponent(hoveredListing.id)}`;
                           }}
                         />
+                        {shownOutliers.get(hoveredListing.id) && (
+                          <ul className="mt-2 space-y-0.5 px-1 text-[11px]">
+                            {shownOutliers.get(hoveredListing.id)!.flags.map((f) => (
+                              <li key={f.kind} className={f.severity === "high" ? "text-destructive" : "text-warning"}>
+                                ⚠ {OUTLIER_KINDS[f.kind].label}: <span className="text-muted-foreground">{f.detail}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                         <div className="mt-2 text-[11px] text-muted-foreground px-1">
                           Click to pin · press Enter to pin
                         </div>
@@ -960,6 +942,22 @@ const GeoPointsPage = () => {
                 ) : null}
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="outliers" className="mt-0">
+            <OutliersPanel
+              geo={geo}
+              pins={withCoords.length}
+              kinds={outlierKinds}
+              onKindsChange={setOutlierKinds}
+              onShowOnMap={(id) => {
+                setOnlyWithCoords(true);
+                setOutlierMode("outliers");
+                if (id) setSelectedId(id);
+                setTab("map");
+                setFitBoundsSignal((x) => x + 1);
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="insights" className="mt-0">
@@ -1005,156 +1003,35 @@ const GeoPointsPage = () => {
                 </CardContent>
               </Card>
 
-              <Card className="lg:col-span-12 rounded-[1.75rem] shadow-[var(--shadow-card)]">
-                <Collapsible open={outliersOpen} onOpenChange={setOutliersOpen}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <CardTitle className="text-base flex items-center gap-2">
-                          <TriangleAlert className="w-4 h-4 text-primary-text/70 shrink-0" aria-hidden />
-                          Outliers & anomalies
-                        </CardTitle>
-                        <CardDescription className="text-xs mt-1">
-                          Robust detection using median/MAD on lat/lng + distance-from-cluster.
-                        </CardDescription>
-                      </div>
-                      <div className="shrink-0 flex flex-col items-end gap-2">
-                        <div className="text-xs text-muted-foreground font-normal text-right">
-                          Outliers: <span className="font-medium text-foreground">{outlierIds.size.toLocaleString()}</span>
-                          {" · "}
-                          (0,0): <span className="font-medium text-foreground">{outlierModel.anomalies.zeroZero.toLocaleString()}</span>
-                          {" · "}
-                          repeats: <span className="font-medium text-foreground">{outlierModel.anomalies.duplicates.toLocaleString()}</span>
-                        </div>
-                        <CollapsibleTrigger
-                          type="button"
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/25 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/40"
-                          aria-label={outliersOpen ? "Collapse outliers panel" : "Expand outliers panel"}
-                        >
-                          <ChevronDown
-                            className={cn("h-4 w-4 transition-transform duration-200", outliersOpen && "rotate-180")}
-                            aria-hidden
-                          />
-                          {outliersOpen ? "Collapse" : "Expand"}
-                        </CollapsibleTrigger>
-                      </div>
-                    </div>
-                  </CardHeader>
-
-                  <CollapsibleContent>
-                    <CardContent className="flex flex-col gap-3 pt-2">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-xs text-muted-foreground">
-                          Tip: click an outlier below to open it in Map, or enable{" "}
-                          <span className="font-medium text-foreground">Outliers only</span>.
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={outlierMode === "outliers" ? "default" : "outline"}
-                            className="rounded-xl"
-                            disabled={withCoords.length < 20}
-                            onClick={() => {
-                              setOutlierMode("outliers");
-                              setOnlyWithCoords(true);
-                              setTab("map");
-                              setFitBoundsSignal((x) => x + 1);
-                            }}
-                          >
-                            Show outliers on map
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="rounded-xl"
-                            onClick={() => {
-                              setOutlierMode("all");
-                            }}
-                          >
-                            Clear outlier filter
-                          </Button>
-                        </div>
-                      </div>
-
-                      {topOutliers.length === 0 ? (
-                        <div className="text-sm text-muted-foreground py-4 text-center">
-                          No outliers detected in this filter scope.
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {topOutliers.map((o) => {
-                            const l = withCoords.find((x) => x.id === o.id);
-                            if (!l) return null;
-                            const lat = l.latitude!;
-                            const lng = l.longitude!;
-                            return (
-                              <button
-                                key={o.id}
-                                type="button"
-                                className="text-left rounded-xl border border-border bg-muted/15 p-3 hover:bg-muted/25 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/40"
-                                onClick={() => {
-                                  setOnlyWithCoords(true);
-                                  setOutlierMode("outliers");
-                                  setSelectedId(l.id);
-                                  setTab("map");
-                                  setFitBoundsSignal((x) => x + 1);
-                                }}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-semibold truncate">{l.title || "Untitled"}</div>
-                                    <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                                      {norm(l.city) || "—"}
-                                      {norm(l.community) ? ` · ${norm(l.community)}` : ""}
-                                    </div>
-                                  </div>
-                                  <div className="text-xs tabular-nums text-muted-foreground shrink-0">
-                                    {o.kmFromCenter.toFixed(1)} km
-                                  </div>
-                                </div>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {o.reasons.slice(0, 3).map((r, i) => (
-                                    <span
-                                      key={i}
-                                      className="inline-flex items-center rounded-full border border-border/70 bg-background px-2 py-0.5 text-[11px] text-muted-foreground"
-                                    >
-                                      {r}
-                                    </span>
-                                  ))}
-                                </div>
-                                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                                  <Button
-                                    asChild
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-8 rounded-lg border border-border bg-background"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <a href={googleMapsQueryUrl(lat, lng)} target="_blank" rel="noopener noreferrer">
-                                      Google
-                                    </a>
-                                  </Button>
-                                  <Button
-                                    asChild
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-8 rounded-lg border border-border bg-background"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <a href={`/listing/${encodeURIComponent(l.id)}`}>Open listing</a>
-                                  </Button>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </CardContent>
-                  </CollapsibleContent>
-                </Collapsible>
-              </Card>
+              <div className="lg:col-span-6">
+                <ChartCard
+                  title="Outliers by kind"
+                  description="Listings flagged by each location and price check (open the Outliers tab to review them)."
+                  table={{ columns: ["Kind", "Listings"], rows: outlierKindRows.map((r) => [r.kind, r.listings]) }}
+                >
+                  <HBars data={outlierKindRows} labelKey="kind" series={[{ key: "listings", label: "Listings", color: SERIES[0] }]} onSelect={() => setTab("outliers")} />
+                </ChartCard>
+              </div>
+              <div className="lg:col-span-6">
+                <ChartCard
+                  title="Pins per market"
+                  description="Listings with coordinates and how many are flagged, per market."
+                  legend={[
+                    { label: "Fine", color: SERIES[0] },
+                    { label: "Outliers", color: SERIES[1] },
+                  ]}
+                  table={{ columns: ["Market", "Pins", "Outliers"], rows: geo.clusters.map((c) => [c.code, c.listings, c.outliers]) }}
+                >
+                  <HBars
+                    data={geo.clusters.map((c) => ({ market: c.code, fine: c.listings - c.outliers, outliers: c.outliers }))}
+                    labelKey="market"
+                    series={[
+                      { key: "fine", label: "Fine", color: SERIES[0] },
+                      { key: "outliers", label: "Outliers", color: SERIES[1] },
+                    ]}
+                  />
+                </ChartCard>
+              </div>
 
               <div className="lg:col-span-6 grid grid-cols-1 gap-4">
                 <BarList
@@ -1191,10 +1068,10 @@ const GeoPointsPage = () => {
           type="button"
           size="sm"
           className="h-11 rounded-full shadow-lg shadow-primary/20 gap-2 px-4"
-          onClick={() => setTab((t) => (t === "map" ? "insights" : "map"))}
+          onClick={() => setTab((t) => (t === "map" ? "outliers" : t === "outliers" ? "insights" : "map"))}
         >
           <Globe2 className="w-4 h-4" aria-hidden />
-          {tab === "map" ? "Insights" : "Map"}
+          {tab === "map" ? "Outliers" : tab === "outliers" ? "Insights" : "Map"}
         </Button>
       </div>
 
