@@ -44,6 +44,10 @@ import { markHomeWorkflowValidationVisited } from "@/lib/homeWorkflowProgress";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
 import { ChartCard, Columns, Donut, HBars, SERIES } from "@/components/charts/ChartKit";
+import { KeyInsights, ProfilingNote, QualityScorecard } from "@/components/quality/ProfilePanels";
+import { VersionChangeAnalysis } from "@/components/quality/VersionChangeAnalysis";
+import { useDataProfile } from "@/hooks/useDataProfile";
+import { profileInsights } from "@/lib/dataProfile";
 
 /** Values that occur more than once, in first-seen order. */
 function duplicatesBy<T>(rows: T[], key: (row: T) => string): string[] {
@@ -140,6 +144,9 @@ const ValidationPage = () => {
     () => (versionListings ? diffListings(prevQ.data ?? [], versionListings) : null),
     [versionListings, prevQ.data],
   );
+
+  const { profile, progress: profileProgress } = useDataProfile(versionListings ?? [], `validation:${version?.id ?? ""}:${versionListings?.length ?? 0}`);
+  const insights = useMemo(() => (profile ? profileInsights(profile) : []), [profile]);
 
   const missingRequiredEffective = useMemo(() => {
     if (!versionListings) return [];
@@ -556,6 +563,23 @@ const ValidationPage = () => {
             </TabsList>
 
             <TabsContent value="overview" className="space-y-8 mt-6 outline-none">
+              {profile ? (
+                <div className="grid gap-6 xl:grid-cols-[1.15fr_1fr]">
+                  <QualityScorecard profile={profile} xml={null} />
+                  <KeyInsights insights={insights} onGo={() => navigate("/field-quality")} />
+                </div>
+              ) : (
+                <ProfilingNote progress={profileProgress} n={versionListings?.length ?? 0} />
+              )}
+              {prevVersion && diff && prevQ.data && (
+                <VersionChangeAnalysis
+                  diff={diff}
+                  before={prevQ.data}
+                  after={versionListings ?? []}
+                  versionLabel={`v${version.number} vs v${prevVersion.number}`}
+                  compareHref={`/feed-compare?source=${source.id}&a=${prevVersion.id}&b=${version.id}`}
+                />
+              )}
               <section aria-labelledby="metrics-heading">
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <h2 id="metrics-heading" className="text-lg font-bold font-heading text-foreground">
