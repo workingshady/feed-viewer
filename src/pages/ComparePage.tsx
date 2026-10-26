@@ -32,6 +32,8 @@ import {
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { Switch } from "@/components/ui/switch";
+import { TextDiffPanes } from "@/components/compare/InlineDiff";
 import { COMPARED_KEYS, listingChangeSet } from "@/lib/listingChanges";
 import { SamePropertyPanel } from "@/components/compare/SamePropertyPanel";
 
@@ -306,6 +308,8 @@ const ComparePage = () => {
   const { listings, listingsByAgency } = useAppData();
   const [ids, setIds] = useState<string[]>(() => getCompareListingIds());
   const [primaryView, setPrimaryView] = useState<ComparePrimaryView>(() => readComparePrimary() ?? "matrix");
+  /** Hide fields that are the same everywhere, so the eye lands on what differs. */
+  const [diffOnly, setDiffOnly] = useState(true);
 
   useEffect(() => {
     const onUpd = () => setIds([...getCompareListingIds()]);
@@ -341,6 +345,13 @@ const ComparePage = () => {
     for (const other of compared.slice(1)) for (const c of listingChangeSet(compared[0], other).changes) out.add(c.key);
     return out;
   }, [compared]);
+
+  const rowDiffers = (key: keyof Listing) => {
+    const k = key === "longitude" ? "latitude" : key;
+    return COMPARED.has(k) ? diffKeys.has(k) : !allSame(compared.map((l) => formatListingFieldValue(key, l)));
+  };
+  const allFieldKeys = LISTING_COMPARE_FIELD_GROUPS.flatMap((g) => g.keys);
+  const differingCount = allFieldKeys.filter((k) => rowDiffers(k)).length;
 
   const firstSecondTextDiff = useMemo(() => {
     if (compared.length < 2) {
@@ -434,6 +445,17 @@ const ComparePage = () => {
           </TabsList>
 
           <TabsContent value="matrix" className="mt-0 space-y-6 outline-none focus-visible:outline-none">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-2.5">
+              <p className="text-sm">
+                <span className="font-semibold text-foreground">{differingCount}</span>
+                <span className="text-muted-foreground"> of {allFieldKeys.length} fields differ</span>
+                <span className="text-xs text-muted-foreground"> · formatting, photo order and pin jitter are ignored</span>
+              </p>
+              <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
+                <Switch checked={diffOnly} onCheckedChange={setDiffOnly} aria-label="Show differences only" />
+                Differences only
+              </label>
+            </div>
             <div className="rounded-xl border border-border/80 bg-card/30 overflow-hidden w-full shadow-sm">
           <div className="overflow-x-auto w-full">
             <table className="w-full min-w-0 table-fixed border-collapse">
@@ -458,7 +480,7 @@ const ComparePage = () => {
                       className="border-r border-border/80 last:border-r-0 px-2 sm:px-3 py-3 text-left align-top min-w-0"
                     >
                       {/* Photo */}
-                      <div className="rounded-xl overflow-hidden mb-3 border border-border" style={{ aspectRatio: "16/10" }}>
+                      <div className="rounded-xl overflow-hidden mb-3 border border-border h-36 sm:h-40 bg-muted">
                         {l.images[0] ? (
                           <img
                             src={l.images[0]}
@@ -505,7 +527,10 @@ const ComparePage = () => {
 
               {/* ── Field rows ── */}
               <tbody>
-                {LISTING_COMPARE_FIELD_GROUPS.map(({ group, keys }) => (
+                {LISTING_COMPARE_FIELD_GROUPS.map(({ group, keys: allKeys }) => {
+                  const keys = diffOnly ? allKeys.filter((key) => rowDiffers(key)) : allKeys;
+                  if (keys.length === 0) return null;
+                  return (
                   <Fragment key={group}>
                     {/* Group separator */}
                     <tr className="bg-muted/50 border-t border-border/80">
@@ -601,7 +626,8 @@ const ComparePage = () => {
                       );
                     })}
                   </Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -614,10 +640,10 @@ const ComparePage = () => {
           >
             <div className="border-b border-border/70 bg-muted/25 px-3 sm:px-4 py-3">
               <h2 id="compare-line-diff-heading" className="text-sm font-semibold text-foreground">
-                Git-style line diff (1st vs 2nd column)
+                Wording differences (1st vs 2nd column)
               </h2>
               <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                Unified diff for title and description — same engine as feed compare.{" "}
+                Words only in the first listing are struck on red; words only in the second are underlined on green.{" "}
                 {colCount > 2 ? (
                   <span className="text-amber-700 dark:text-amber-400/90">
                     With {colCount} columns, only the first two listings are diffed here; the table above still shows all columns.
@@ -626,19 +652,14 @@ const ComparePage = () => {
               </p>
             </div>
             <div className="p-3 sm:p-4 space-y-4">
-              <GitStyleDiffBlock
-                label="Title"
-                lines={firstSecondTextDiff.title.lines}
-                truncated={firstSecondTextDiff.title.truncated}
-                fallback={firstSecondTextDiff.title.fallback}
-                maxHeightClass="max-h-40"
-              />
-              <GitStyleDiffBlock
-                label="Description"
-                lines={firstSecondTextDiff.description.lines}
-                truncated={firstSecondTextDiff.description.truncated}
-                fallback={firstSecondTextDiff.description.fallback}
-              />
+              <div className="space-y-1.5">
+                <div className="text-xs font-semibold text-foreground">Title</div>
+                <TextDiffPanes before={compared[0].title ?? ""} after={compared[1].title ?? ""} labels={{ before: "Column 1", after: "Column 2" }} maxHeightClass="max-h-32" />
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-xs font-semibold text-foreground">Description</div>
+                <TextDiffPanes before={compared[0].description ?? ""} after={compared[1].description ?? ""} labels={{ before: "Column 1", after: "Column 2" }} />
+              </div>
             </div>
           </section>
         ) : null}

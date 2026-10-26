@@ -20,6 +20,8 @@ export type AppData = {
   /** Live version of the scoped source. */
   selectedLiveVersion: VersionDTO | null;
   refreshAll: () => void;
+  /** Id of the matching model in use ("builtin" until the server's active one loads). */
+  matchModelKey: string;
 };
 
 export const DataContext = createContext<AppData | null>(null);

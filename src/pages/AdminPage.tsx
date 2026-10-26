@@ -18,6 +18,7 @@ import {
 import { formatBytes, timeAgo } from "@/components/sources/format";
 import { useAppData } from "@/providers/useAppData";
 import { AdminCharts } from "@/components/admin/AdminCharts";
+import { MatchingModelCard } from "@/components/admin/MatchingModelCard";
 import { InviteUserButton, PendingInvitesCard, ResetLinkButton, SharedLinksCard } from "@/components/admin/AccessCards";
 import { ApiError } from "@/lib/api";
 import { roleLabel, type AppRole } from "@/lib/roles";
@@ -280,6 +281,7 @@ const AdminPage = () => {
           </CardContent>
         </Card>
 
+        <MatchingModelCard />
         <PendingInvitesCard />
         <SharedLinksCard />
 

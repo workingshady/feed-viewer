@@ -1,11 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { ChevronDown, ImageIcon } from "lucide-react";
+import { ArrowRight, ChevronDown, ImageIcon } from "lucide-react";
+import { DiffSide, TextDiffPanes } from "@/components/compare/InlineDiff";
+import { wordDiff } from "@/lib/wordDiff";
 import { CATEGORY_ICON, fieldLabel } from "@/lib/changeDisplay";
-import { GitStyleDiffBlock } from "@/components/GitStyleDiffBlock";
 import { mediaKey, type FieldChange, type ListingChangeSet } from "@/lib/listingChanges";
 import { formatListingFieldValue } from "@/lib/listingFieldFormat";
-import { diffPlainText } from "@/lib/textLineDiff";
 import type { Listing } from "@/lib/types";
 import { formatPriceCompact } from "@/lib/displayPrice";
 import { cn } from "@/lib/utils";
@@ -45,67 +45,132 @@ function PhotoDelta({ before, after }: { before: Listing; after: Listing }) {
   const a = new Set(after.images.map(mediaKey));
   const added = after.images.filter((u) => !b.has(mediaKey(u)));
   const removed = before.images.filter((u) => !a.has(mediaKey(u)));
-  const strip = (label: string, urls: string[]) =>
+  const strip = (label: string, urls: string[], tone: string) =>
     urls.length ? (
-      <div className="space-y-1">
+      <div className={cn("space-y-1.5 rounded-lg border p-2", tone)}>
         <div className="text-[11px] font-semibold text-muted-foreground">
           {label} ({urls.length})
         </div>
         <div className="flex flex-wrap gap-1.5">
           {urls.slice(0, 10).map((u) => (
             <a key={u} href={u} target="_blank" rel="noreferrer">
-              <Thumb src={u} className="h-12 w-16" />
+              <Thumb src={u} className="h-14 w-20" />
             </a>
           ))}
+          {urls.length > 10 && <span className="self-center text-[11px] text-muted-foreground">+{urls.length - 10}</span>}
         </div>
       </div>
     ) : null;
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {strip("Photos added", added)}
-      {strip("Photos removed", removed)}
+    <div className="grid gap-2 sm:grid-cols-2">
+      {strip("Photos removed", removed, "border-destructive/20 bg-destructive/[0.03]")}
+      {strip("Photos added", added, "border-success/25 bg-success/[0.04]")}
     </div>
   );
 }
 
-/** Field-by-field detail for one changed listing: values, text diffs, photo changes, data gaps. */
-export function ChangeDetail({ before, after, changes }: { before: Listing; after: Listing; changes: ListingChangeSet }) {
+/** Short text fields shown as a word diff inside the before/after cells. */
+const WORD_DIFF_KEYS: ReadonlySet<keyof Listing> = new Set<keyof Listing>(["title", "address", "community", "subCommunity", "propertyName", "city", "developer"]);
+
+/** "+5.4%" style badge for numeric changes, coloured by direction where direction has meaning. */
+function DeltaBadge({ change, before, after }: { change: FieldChange; before: Listing; after: Listing }) {
+  const x = Number(before[change.key]);
+  const y = Number(after[change.key]);
+  if (!(x > 0 && y > 0) || !["price", "area", "plotSize", "serviceCharge"].includes(change.key)) return null;
+  const pct = ((y - x) / x) * 100;
+  const tone = change.key === "price" || change.key === "serviceCharge" ? (pct < 0 ? "text-success" : "text-destructive-text") : "text-muted-foreground";
+  return (
+    <span className={cn("ml-2 inline-flex items-center rounded-full bg-muted px-1.5 py-px font-mono text-[10px] tabular-nums", tone)}>
+      {pct > 0 ? "+" : "−"}
+      {Math.abs(pct).toFixed(1)}%
+    </span>
+  );
+}
+
+/**
+ * Field-by-field detail for one changed listing, laid out as Before → After: removed values on a red
+ * tint, new values on a green tint, words that changed highlighted inside text, numeric moves as a
+ * % badge, description as two side-by-side panes, photos as removed/added strips, and data that was
+ * only filled in or dropped listed separately.
+ */
+export function ChangeDetail({
+  before,
+  after,
+  changes,
+  labels = { before: "Before", after: "After" },
+}: {
+  before: Listing;
+  after: Listing;
+  changes: ListingChangeSet;
+  labels?: { before: string; after: string };
+}) {
   const table = changes.material.filter((c) => c.key !== "description" && c.key !== "images");
   const desc = changes.material.find((c) => c.key === "description");
   const photos = changes.material.find((c) => c.key === "images");
   const value = (k: keyof Listing, l: Listing) => (k === "latitude" ? `${l.latitude ?? "—"}, ${l.longitude ?? "—"}` : formatListingFieldValue(k, l));
   return (
     <div className="space-y-4">
+      {(photos || before.images[0] !== after.images[0]) && (
+        <div className="grid grid-cols-2 gap-2 sm:max-w-md">
+          {([["before", before], ["after", after]] as const).map(([side, l]) => (
+            <figure key={side} className="space-y-1">
+              <Thumb src={l.images[0]} className="aspect-[4/3] w-full" />
+              <figcaption className="text-[11px] text-muted-foreground">
+                {labels[side]} · {l.images.length} photos
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
       {table.length > 0 && (
         <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full min-w-[32rem] text-xs">
+          <table className="w-full min-w-[36rem] text-xs">
             <thead className="bg-muted/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 font-semibold">Field</th>
-                <th className="px-3 py-2 font-semibold">Before</th>
-                <th className="px-3 py-2 font-semibold">After</th>
+                <th className="w-36 px-3 py-2 font-semibold">Field</th>
+                <th className="px-3 py-2 font-semibold">{labels.before}</th>
+                <th className="w-6 px-0 py-2" aria-hidden />
+                <th className="px-3 py-2 font-semibold">{labels.after}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {table.map((c) => (
-                <tr key={c.key}>
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-foreground">{fieldLabel(c.key)}</td>
-                  <td className="max-w-[18rem] break-words px-3 py-2 text-muted-foreground line-through decoration-destructive/40">{value(c.key, before)}</td>
-                  <td className="max-w-[18rem] break-words px-3 py-2 text-foreground">{value(c.key, after)}</td>
-                </tr>
-              ))}
+              {table.map((c) => {
+                const vb = value(c.key, before);
+                const va = value(c.key, after);
+                const d = WORD_DIFF_KEYS.has(c.key) ? wordDiff(vb, va) : null;
+                return (
+                  <tr key={c.key} className="align-top">
+                    <td className="whitespace-nowrap px-3 py-2 font-medium text-foreground">
+                      {fieldLabel(c.key)}
+                      {c.minor && <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">minor</span>}
+                    </td>
+                    <td className="max-w-[20rem] break-words bg-destructive/[0.05] px-3 py-2 text-muted-foreground">
+                      {d ? <DiffSide tokens={d.tokens} side="before" /> : vb}
+                    </td>
+                    <td className="px-0 py-2 text-center text-muted-foreground" aria-hidden>
+                      <ArrowRight className="mx-auto h-3.5 w-3.5" />
+                    </td>
+                    <td className="max-w-[20rem] break-words bg-success/[0.06] px-3 py-2 font-medium text-foreground">
+                      {d ? <DiffSide tokens={d.tokens} side="after" /> : va}
+                      <DeltaBadge change={c} before={before} after={after} />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
-      {desc && (() => {
-        const d = diffPlainText(before.description ?? "", after.description ?? "");
-        return <GitStyleDiffBlock label="Description" lines={d.lines} truncated={d.truncated} fallback={d.fallback} maxHeightClass="max-h-72" />;
-      })()}
+      {desc && (
+        <div className="space-y-1.5">
+          <div className="text-xs font-semibold text-foreground">Description</div>
+          <TextDiffPanes before={before.description ?? ""} after={after.description ?? ""} labels={labels} />
+        </div>
+      )}
       {photos && <PhotoDelta before={before} after={after} />}
       {changes.completeness.length > 0 && (
-        <p className="text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">Data completeness: </span>
+        <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">Data only filled in or dropped (not counted as a change): </span>
           {changes.completeness.map((c) => `${fieldLabel(c.key)} ${c.kind === "filled" ? "filled in" : "now empty"}`).join(" · ")}
         </p>
       )}
@@ -124,6 +189,7 @@ export function ListingChangeRow({
   href,
   header,
   defaultOpen = false,
+  labels,
 }: {
   before: Listing;
   after: Listing;
@@ -132,6 +198,8 @@ export function ListingChangeRow({
   /** Extra line under the title (e.g. relisted: old → new reference with evidence). */
   header?: ReactNode;
   defaultOpen?: boolean;
+  /** Names for the two sides, e.g. "Before · v3" / "After · v4". */
+  labels?: { before: string; after: string };
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const chips = changes.material;
@@ -167,7 +235,7 @@ export function ListingChangeRow({
       </button>
       {open && (
         <div className="space-y-3 border-t border-border px-3 pb-3 pt-3">
-          <ChangeDetail before={before} after={after} changes={changes} />
+          <ChangeDetail before={before} after={after} changes={changes} labels={labels} />
           {href && (
             <Link to={href} className="inline-block text-xs font-medium text-primary-text hover:underline">
               Open listing →

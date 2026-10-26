@@ -1,6 +1,6 @@
 import type { Listing } from "@/lib/types";
 import { jaccard, mediaKey, metresBetween, textKey, wordSet } from "@/lib/listingChanges";
-import { MATCH_WEIGHTS } from "@/lib/propertyMatchWeights";
+import { MATCH_WEIGHTS, type WeightTable } from "@/lib/propertyMatchWeights";
 
 /**
  * "Is this the same property?" without trusting any single field.
@@ -35,7 +35,9 @@ export type MatchSignal =
   | "location"
   | "price"
   | "agent"
-  | "floor";
+  | "floor"
+  /** A person's verdict, which overrides the score. */
+  | "review";
 
 export type Evidence = { signal: MatchSignal; weight: number; label: string };
 
@@ -59,6 +61,7 @@ export const SIGNAL_LABEL: Record<MatchSignal, string> = {
   price: "Price",
   agent: "Agent",
   floor: "Floor",
+  review: "Reviewer",
 };
 
 /* ── preparation ─────────────────────────────────────────────────────────── */
@@ -316,9 +319,25 @@ export function compareLevels(a: Prepared, b: Prepared): Comparison[] {
   return out;
 }
 
-/** Weighted evidence that `a` and `b` are the same property. */
+/**
+ * The model in use: the active one from the server when loaded (see useMatchModel), otherwise the
+ * weights shipped with the app. Workers receive it explicitly.
+ */
+let activeWeights: Record<MatchContext, WeightTable> = MATCH_WEIGHTS;
+
+export function setMatchWeights(w: Record<MatchContext, WeightTable> | null) {
+  activeWeights = w ?? MATCH_WEIGHTS;
+}
+
+export const getMatchWeights = () => activeWeights;
+
+/** Weighted evidence that `a` and `b` are the same property, under the active model. */
 export function scorePair(a: Prepared, b: Prepared, context: MatchContext = "versions"): PairScore {
-  const table = MATCH_WEIGHTS[context];
+  return scoreWith(a, b, activeWeights[context], context);
+}
+
+/** Same as `scorePair` with an explicit weight table (training compares models with this). */
+export function scoreWith(a: Prepared, b: Prepared, table: WeightTable, context: MatchContext = "versions"): PairScore {
   const evidence: Evidence[] = [];
   for (const c of compareLevels(a, b)) {
     const w = table.weights[c.signal]?.[c.level] ?? 0;
@@ -402,6 +421,24 @@ export function candidatePairs(items: Prepared[], include: (a: Prepared, b: Prep
 export type MatchedPair = { a: Listing; b: Listing; score: number; verdict: Verdict; evidence: Evidence[] };
 
 /**
+ * Reviewer verdicts, keyed by `pairKey(ids)`. "different" pairs are never linked; "same" pairs are
+ * linked whatever their score.
+ */
+export type MatchOverrides = { same: Set<string>; different: Set<string> };
+
+export const pairKey = (ids: string[]) => [...new Set(ids)].sort().join("|");
+
+const REVIEWED_SAME: Evidence = { signal: "review", weight: 99, label: "Confirmed by a reviewer" };
+
+function applyOverride(o: MatchOverrides | undefined, a: Listing, b: Listing, s: PairScore): PairScore | null {
+  if (!o) return s;
+  const k = pairKey([a.id, b.id]);
+  if (o.different.has(k)) return null;
+  if (o.same.has(k)) return { score: Math.max(s.score, 99), verdict: "match", evidence: [REVIEWED_SAME, ...s.evidence] };
+  return s;
+}
+
+/**
  * Best one-to-one pairing of `before` and `after` listings by score (greedy on descending score,
  * which is near-optimal when good matches are far apart from the rest, as they are here).
  * Returns confident matches and, separately, plausible pairs left for review.
@@ -410,6 +447,7 @@ export function matchListingSets(
   before: Listing[],
   after: Listing[],
   context: MatchContext = "versions",
+  overrides?: MatchOverrides,
 ): { matches: MatchedPair[]; possible: MatchedPair[] } {
   if (!before.length || !after.length) return { matches: [], possible: [] };
   const items = prepareListings([
@@ -418,8 +456,20 @@ export function matchListingSets(
   ]);
   const scored: { i: number; j: number; s: PairScore }[] = [];
   for (const [i, j] of candidatePairs(items, (x, y) => x.group !== y.group)) {
-    const s = scorePair(items[i], items[j], context);
-    if (s.verdict !== "different") scored.push(items[i].group === "A" ? { i, j, s } : { i: j, j: i, s });
+    const s = applyOverride(overrides, items[i].listing, items[j].listing, scorePair(items[i], items[j], context));
+    if (s && s.verdict !== "different") scored.push(items[i].group === "A" ? { i, j, s } : { i: j, j: i, s });
+  }
+  // A reviewer's "same" stands even when blocking never proposed the pair.
+  if (overrides?.same.size) {
+    const idx = new Map(items.map((p, k) => [p.listing.id, k]));
+    for (const key of overrides.same) {
+      const ids = key.split("|");
+      if (ids.length !== 2) continue;
+      const [x, y] = ids.map((id) => idx.get(id));
+      if (x == null || y == null || items[x].group === items[y].group) continue;
+      const [i, j] = items[x].group === "A" ? [x, y] : [y, x];
+      if (!scored.some((e) => e.i === i && e.j === j)) scored.push({ i, j, s: { score: 99, verdict: "match", evidence: [REVIEWED_SAME] } });
+    }
   }
   scored.sort((x, y) => y.s.score - x.s.score);
   const used = new Set<number>();
@@ -458,15 +508,27 @@ export type PropertyCluster = {
  */
 export function clusterSameProperty(
   groups: { group: string; listings: Listing[] }[],
-  opts: { crossGroupOnly?: boolean } = {},
+  opts: { crossGroupOnly?: boolean; overrides?: MatchOverrides } = {},
 ): { clusters: PropertyCluster[]; possible: PropertyCluster[]; compared: number } {
   const context: MatchContext = opts.crossGroupOnly ? "agencies" : "versions";
   const items = prepareListings(groups);
   const pairs = candidatePairs(items, (x, y) => !opts.crossGroupOnly || x.group !== y.group);
   const edges: { i: number; j: number; s: PairScore }[] = [];
   for (const [i, j] of pairs) {
-    const s = scorePair(items[i], items[j], context);
-    if (s.verdict !== "different") edges.push({ i, j, s });
+    const s = applyOverride(opts.overrides, items[i].listing, items[j].listing, scorePair(items[i], items[j], context));
+    if (s && s.verdict !== "different") edges.push({ i, j, s });
+  }
+  if (opts.overrides?.same.size) {
+    const idx = new Map(items.map((p, k) => [p.listing.id, k]));
+    const have = new Set(edges.map((e) => `${e.i}:${e.j}`));
+    for (const key of opts.overrides.same) {
+      const ks = key.split("|").map((id) => idx.get(id)).filter((k): k is number => k != null);
+      for (let x = 0; x < ks.length; x++)
+        for (let y = x + 1; y < ks.length; y++) {
+          const [i, j] = [Math.min(ks[x], ks[y]), Math.max(ks[x], ks[y])];
+          if (!have.has(`${i}:${j}`)) edges.push({ i, j, s: { score: 99, verdict: "match", evidence: [REVIEWED_SAME] } });
+        }
+    }
   }
   edges.sort((x, y) => y.s.score - x.s.score);
 

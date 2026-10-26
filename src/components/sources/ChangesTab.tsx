@@ -16,6 +16,8 @@ import { diffListings } from "@/lib/versionDiff";
 import { UI_FIELDS, type Listing } from "@/lib/types";
 import { BarList, listingHref } from "./BarList";
 import { DiffBadges } from "./VersionRow";
+import { useMatchDecisions } from "@/hooks/useMatching";
+import { useAppData } from "@/providers/DataProvider";
 import { ListingChangeRow } from "@/components/compare/ListingChangeRow";
 import { EvidenceList } from "@/components/compare/MatchEvidence";
 
@@ -88,17 +90,21 @@ export function ChangesTab({ source }: { source: SourceDTO }) {
   const prev = olderVersion(source, live);
   const after = useVersionListings(live);
   const before = useVersionListings(prev);
+  const { overrides } = useMatchDecisions();
+  const { matchModelKey } = useAppData();
 
   const data = useMemo(() => {
     if (!after.data || (prev && !before.data)) return null;
-    const diff = diffListings(before.data ?? [], after.data);
+    const diff = diffListings(before.data ?? [], after.data, overrides);
     return {
       diff,
       moves: priceMoves(diff),
       fields: changedFieldCounts(diff),
       completeness: completenessDelta(before.data ?? [], after.data),
     };
-  }, [after.data, before.data, prev]);
+    // The model key re-runs matching when a newly trained model becomes active.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [after.data, before.data, prev, overrides, matchModelKey]);
 
   if (!live) return <p className="py-8 text-center text-sm text-muted-foreground">No live version yet.</p>;
   if (!prev) {

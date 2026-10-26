@@ -8,15 +8,16 @@ import { Input } from "@/components/ui/input";
 import { prepareCompareTrayFromIds } from "@/lib/compareSelection";
 import { formatPriceCompact } from "@/lib/displayPrice";
 import type { Evidence } from "@/lib/propertyMatch";
-import { MATCH_WEIGHTS } from "@/lib/propertyMatchWeights";
 import { toCsv } from "@/lib/reports";
 import type { Listing } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { downloadText } from "@/components/sources/format";
 import { useAppData } from "@/providers/DataProvider";
 import type { SamePropertyResponse, WireCluster } from "@/workers/sameProperty.worker";
-import { Building2, Download, GitCompare, HelpCircle, Layers, Loader2, RefreshCw, Search, ShieldCheck, ThumbsDown, ThumbsUp } from "lucide-react";
-import { groupKey, readDecisions, writeDecisions, type MatchDecision } from "@/lib/matchDecisions";
+import { Building2, Download, GitCompare, HelpCircle, Layers, Loader2, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { VerdictButtons } from "@/components/compare/VerdictButtons";
+import { useMatchDecisions } from "@/hooks/useMatching";
+import { getMatchWeights, pairKey } from "@/lib/propertyMatch";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
@@ -35,7 +36,7 @@ type Group = {
 };
 
 const TIER: Record<Tier, { label: string; hint: string; icon: typeof ShieldCheck; tone: string }> = {
-  permit: { label: "Confirmed", hint: "same permit number", icon: ShieldCheck, tone: "bg-success/10 text-success ring-success/25" },
+  permit: { label: "Confirmed", hint: "same permit, or confirmed by a reviewer", icon: ShieldCheck, tone: "bg-success/10 text-success ring-success/25" },
   possible: { label: "Needs review", hint: "similar, no shared permit: a person decides", icon: HelpCircle, tone: "bg-warning/10 text-warning ring-warning/25" },
 };
 
@@ -52,7 +53,8 @@ function toGroups(clusters: WireCluster[], names: string[], lists: Listing[][], 
   return clusters.map((c, i) => {
     const items = c.items.map(([g, l]) => ({ agency: names[g], listing: lists[g][l] }));
     const evidence = [...(c.links[0]?.evidence ?? [])] as Evidence[];
-    const permit = c.links.some((l) => l.evidence.some((e) => e.signal === "permit" && e.weight > 0));
+    // Confirmed = a shared permit or a reviewer said so.
+    const permit = c.links.some((l) => l.evidence.some((e) => (e.signal === "permit" || e.signal === "review") && e.weight > 0));
     const purposes = [...new Set(items.map((x) => x.listing.purpose))];
     return {
       key: `${possible ? "p" : "m"}${i}`,
@@ -68,7 +70,8 @@ function toGroups(clusters: WireCluster[], names: string[], lists: Listing[][], 
 }
 
 export default function CrossAgencyDupesPage() {
-  const { listingsByAgency, sources, isLoading } = useAppData();
+  const { listingsByAgency, sources, isLoading, matchModelKey } = useAppData();
+  const { overrides, byKey, isLoading: decisionsLoading } = useMatchDecisions();
   const navigate = useNavigate();
   const [run, setRun] = useState(0);
   const [state, setState] = useState<{ groups: Group[]; compared: number; ms: number } | { error: string } | null>(null);
@@ -78,7 +81,7 @@ export default function CrossAgencyDupesPage() {
   const logo = useMemo(() => new Map(sources.map((s) => [s.name, s.agencyInfo?.logo || undefined])), [sources]);
 
   useEffect(() => {
-    if (names.length < 2) return;
+    if (names.length < 2 || decisionsLoading) return;
     setState(null);
     const lists = names.map((n) => listingsByAgency.get(n) ?? []);
     const worker = new Worker(new URL("../workers/sameProperty.worker.ts", import.meta.url), { type: "module" });
@@ -92,9 +95,10 @@ export default function CrossAgencyDupesPage() {
       setState({ error: e.message || "Matching failed" });
       worker.terminate();
     };
-    worker.postMessage({ groups: names.map((n, i) => ({ group: n, listings: lists[i] })) });
+    worker.postMessage({ groups: names.map((n, i) => ({ group: n, listings: lists[i] })), weights: getMatchWeights(), overrides });
     return () => worker.terminate();
-  }, [names, listingsByAgency, run]);
+    // matchModelKey re-runs matching when a newly trained model becomes active.
+  }, [names, listingsByAgency, run, overrides, decisionsLoading, matchModelKey]);
 
   const [tier, setTier] = useState<Tier | "all">("all");
   const [agency, setAgency] = useState("all");
@@ -102,26 +106,15 @@ export default function CrossAgencyDupesPage() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"confidence" | "spread" | "agencies">("confidence");
   const [shown, setShown] = useState(PAGE);
-  const [decisions, setDecisions] = useState(readDecisions);
   const [showDismissed, setShowDismissed] = useState(false);
-  const decide = (g: Group, d: MatchDecision | null) => {
-    const key = groupKey(g.items.map((x) => x.listing.id));
-    setDecisions((prev) => {
-      const next = { ...prev };
-      if (d && prev[key] !== d) next[key] = d;
-      else delete next[key];
-      writeDecisions(next);
-      return next;
-    });
-  };
-  const decisionOf = (g: Group) => decisions[groupKey(g.items.map((x) => x.listing.id))];
+  const decisionOf = (g: Group) => byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict;
 
   const groups = useMemo(() => (state && "groups" in state ? state.groups : []), [state]);
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
     const out = groups.filter(
       (g) =>
-        (showDismissed || decisions[groupKey(g.items.map((x) => x.listing.id))] !== "different") &&
+        (showDismissed || byKey.get(pairKey(g.items.map((x) => x.listing.id)))?.verdict !== "different") &&
         (tier === "all" || g.tier === tier) &&
         (agency === "all" || g.agencies.includes(agency)) &&
         (purpose === "all" || g.purpose === purpose) &&
@@ -137,7 +130,7 @@ export default function CrossAgencyDupesPage() {
           : order[a.tier] - order[b.tier] || b.score - a.score,
     );
     return out;
-  }, [groups, tier, agency, purpose, q, sort, decisions, showDismissed]);
+  }, [groups, tier, agency, purpose, q, sort, byKey, showDismissed]);
   useEffect(() => setShown(PAGE), [tier, agency, purpose, q, sort]);
 
   const insights = useMemo(() => {
@@ -214,7 +207,8 @@ export default function CrossAgencyDupesPage() {
             <p className="text-sm text-muted-foreground">
               One property advertised by more than one agency. A shared permit number confirms it. Without one, agencies re-shoot
               photos and rewrite copy, so identical units in the same tower look alike on every other field: those pairs are
-              listed under Needs review, with the evidence, for you to confirm or dismiss.
+              listed under Needs review, with the evidence. Verdicts are shared with the team, apply immediately, and train the
+              next matching model.
             </p>
           </div>
           <div className="flex gap-2">
@@ -321,8 +315,6 @@ export default function CrossAgencyDupesPage() {
                     key={g.key}
                     g={g}
                     logo={logo}
-                    decision={decisionOf(g)}
-                    onDecide={(d) => decide(g, d)}
                     onCompare={() => {
                       if (prepareCompareTrayFromIds(g.items.map((x) => x.listing.id))) navigate("/compare");
                     }}
@@ -338,6 +330,69 @@ export default function CrossAgencyDupesPage() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+/** What a reviewer checks first, in the order they check it. */
+const COMPARE_ROWS: { label: string; value: (l: Listing) => string }[] = [
+  { label: "Purpose", value: (l) => l.purpose },
+  { label: "Price", value: (l) => (l.price > 0 ? `${l.currency} ${formatPriceCompact(l.price)}` : "POA") },
+  { label: "Bedrooms", value: (l) => (l.beds ? String(l.beds) : "Studio") },
+  { label: "Bathrooms", value: (l) => (l.baths ? String(l.baths) : "—") },
+  { label: "Size", value: (l) => (l.area ? `${Math.round(l.area).toLocaleString()} sqft` : "—") },
+  { label: "Building", value: (l) => l.propertyName || "—" },
+  { label: "Floor", value: (l) => l.floor || "—" },
+  { label: "Permit", value: (l) => l.permitNumber || "—" },
+  { label: "Agent", value: (l) => l.agent?.name || "—" },
+  { label: "Reference", value: (l) => l.reference || "—" },
+];
+
+/**
+ * The group's listings side by side, field by field. Values that differ from the first listing are
+ * highlighted; rows where every listing agrees are muted, so differences stand out at a glance.
+ */
+function FieldCompare({ items }: { items: Group["items"] }) {
+  const cols = items.slice(0, 6);
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <table className="w-full min-w-[30rem] text-xs">
+        <thead className="bg-muted/50 text-left text-[11px] text-muted-foreground">
+          <tr>
+            <th className="w-24 px-3 py-1.5 font-semibold" />
+            {cols.map((x) => (
+              <th key={x.listing.id} className="max-w-[12rem] truncate px-3 py-1.5 font-semibold text-foreground">
+                {x.agency}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {COMPARE_ROWS.map((r) => {
+            const vals = cols.map((x) => r.value(x.listing));
+            const norm = (v: string) => v.trim().toLowerCase();
+            const same = vals.every((v) => norm(v) === norm(vals[0]));
+            return (
+              <tr key={r.label} className={cn(same && "text-muted-foreground")}>
+                <td className="px-3 py-1.5 font-medium">{r.label}</td>
+                {vals.map((v, i) => (
+                  <td
+                    key={i}
+                    className={cn(
+                      "max-w-[12rem] truncate px-3 py-1.5 tabular-nums",
+                      !same && i > 0 && norm(v) !== norm(vals[0]) && "bg-warning/15 font-semibold text-foreground",
+                      !same && i === 0 && "font-semibold text-foreground",
+                    )}
+                    title={v}
+                  >
+                    {v}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -364,19 +419,7 @@ function Kpi({ label, value, hint, active, onClick }: { label: string; value: nu
   );
 }
 
-function GroupCard({
-  g,
-  logo,
-  onCompare,
-  decision,
-  onDecide,
-}: {
-  g: Group;
-  logo: Map<string, string | undefined>;
-  onCompare: () => void;
-  decision?: MatchDecision;
-  onDecide: (d: MatchDecision | null) => void;
-}) {
+function GroupCard({ g, logo, onCompare }: { g: Group; logo: Map<string, string | undefined>; onCompare: () => void }) {
   const T = TIER[g.tier];
   return (
     <li className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-[var(--shadow-card)]">
@@ -391,28 +434,11 @@ function GroupCard({
           <span className="text-xs text-muted-foreground">· price gap {(g.priceSpread * 100).toFixed(1)}%</span>
         )}
         <span className="ml-auto flex items-center gap-2">
-          <ScoreMeter score={g.score} threshold={MATCH_WEIGHTS.agencies.match} />
+          <ScoreMeter score={g.score} threshold={getMatchWeights().agencies.match} />
           <Button size="sm" variant="outline" className="h-8 text-xs" onClick={onCompare}>
             <GitCompare className="mr-1 h-3.5 w-3.5" /> Compare
           </Button>
-          <span className="inline-flex overflow-hidden rounded-lg border border-border" role="group" aria-label="Your verdict">
-            <button
-              type="button"
-              aria-pressed={decision === "same"}
-              onClick={() => onDecide("same")}
-              className={cn("inline-flex h-8 items-center gap-1 px-2.5 text-xs", decision === "same" ? "bg-success/15 text-success" : "text-muted-foreground hover:bg-muted")}
-            >
-              <ThumbsUp className="h-3.5 w-3.5" aria-hidden /> Same property
-            </button>
-            <button
-              type="button"
-              aria-pressed={decision === "different"}
-              onClick={() => onDecide("different")}
-              className={cn("inline-flex h-8 items-center gap-1 border-l border-border px-2.5 text-xs", decision === "different" ? "bg-destructive/10 text-destructive-text" : "text-muted-foreground hover:bg-muted")}
-            >
-              <ThumbsDown className="h-3.5 w-3.5" aria-hidden /> Not the same
-            </button>
-          </span>
+          <VerdictButtons ids={g.items.map((x) => x.listing.id)} context="agencies" />
         </span>
       </div>
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -448,6 +474,7 @@ function GroupCard({
           </Link>
         ))}
       </div>
+      <FieldCompare items={g.items} />
       <EvidenceList evidence={g.evidence} limit={6} compact />
     </li>
   );

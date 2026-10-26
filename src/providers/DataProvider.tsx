@@ -8,6 +8,7 @@ import { importListingDiffKey } from "@/lib/importAnalysis";
 import { currencyCode } from "@/lib/displayPrice";
 import { amenityLabel } from "@/lib/amenityCodes";
 import type { Listing } from "@/lib/types";
+import { useAutoRetrain, useMatchModel } from "@/hooks/useMatching";
 
 export type { ListingsScope, AppData } from "@/providers/dataContext";
 export { useAppData } from "@/providers/useAppData";
@@ -78,6 +79,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return [...listingsByAgency.values()].flat();
   }, [listingsByAgency, selectedSource]);
 
+  const { modelKey: matchModelKey } = useMatchModel(!!user);
+  useAutoRetrain(sources, listingsByAgency, sourcesQuery.isLoading || live.isLoading);
+
   const refreshAll = useCallback(() => {
     void qc.invalidateQueries({ queryKey: SOURCES_KEY });
   }, [qc]);
@@ -94,6 +98,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       selectedSource,
       selectedLiveVersion: selectedSource ? liveVersionOf(selectedSource) : null,
       refreshAll,
+      matchModelKey,
     }),
     [
       sources,
@@ -107,6 +112,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setScope,
       selectedSource,
       refreshAll,
+      matchModelKey,
     ],
   );
 

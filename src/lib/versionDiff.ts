@@ -1,5 +1,5 @@
 import { listingChangeSet, type ListingChangeSet } from "@/lib/listingChanges";
-import { matchListingSets, type Evidence } from "@/lib/propertyMatch";
+import { matchListingSets, type Evidence, type MatchOverrides } from "@/lib/propertyMatch";
 import type { Listing } from "@/lib/types";
 
 export type ChangedListing = {
@@ -62,7 +62,7 @@ const keysOf = (c: ListingChangeSet) => [...new Set(c.material.map((m) => m.key)
  *    property evidence — permit, photos, description, size, layout, location — so a re-posted
  *    property counts as relisted rather than one removal plus one addition.
  */
-export function diffListings(prev: Listing[], next: Listing[]): VersionDiff {
+export function diffListings(prev: Listing[], next: Listing[], overrides?: MatchOverrides): VersionDiff {
   const dupes = new Set<string>();
   const before = byReference(prev);
   const after = byReference(next, dupes);
@@ -95,7 +95,7 @@ export function diffListings(prev: Listing[], next: Listing[]): VersionDiff {
   const leftoverPrev: Listing[] = [...before.noRef];
   for (const [k, l] of before.map) if (!after.map.has(k)) leftoverPrev.push(l);
 
-  const { matches, possible } = matchListingSets(leftoverPrev, leftoverNext, "versions");
+  const { matches, possible } = matchListingSets(leftoverPrev, leftoverNext, "versions", overrides);
   const matchedPrev = new Set<Listing>();
   const matchedNext = new Set<Listing>();
   for (const m of matches) {

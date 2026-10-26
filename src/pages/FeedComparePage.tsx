@@ -12,7 +12,7 @@ import { useVersionListings } from "@/hooks/useSources";
 import { formatPriceCompact } from "@/lib/displayPrice";
 import { CATEGORY_LABEL, type ChangeCategory } from "@/lib/listingChanges";
 import { clusterSameProperty } from "@/lib/propertyMatch";
-import { MATCH_WEIGHTS } from "@/lib/propertyMatchWeights";
+import { getMatchWeights } from "@/lib/propertyMatch";
 import { changesCsv } from "@/lib/reports";
 import { liveVersionOf, type SourceDTO, type VersionDTO } from "@/lib/sourcesApi";
 import type { Listing } from "@/lib/types";
@@ -21,6 +21,8 @@ import { diffListings, type VersionDiff } from "@/lib/versionDiff";
 import { categoryCounts, completenessByField, median, priceChangeBands, priceMoveRows } from "@/lib/versionInsights";
 import { downloadText } from "@/components/sources/format";
 import { useAppData } from "@/providers/DataProvider";
+import { useDecide, useMatchDecisions } from "@/hooks/useMatching";
+import { VerdictButtons } from "@/components/compare/VerdictButtons";
 import {
   ArrowDownRight,
   ArrowLeftRight,
@@ -71,7 +73,8 @@ const matchesQuery = (l: Listing, q: string) =>
   !q || `${l.reference} ${l.title} ${l.community} ${l.propertyName} ${l.agent?.name ?? ""}`.toLowerCase().includes(q);
 
 export default function FeedComparePage() {
-  const { sources, selectedSource } = useAppData();
+  const { sources, selectedSource, matchModelKey } = useAppData();
+  const { overrides } = useMatchDecisions();
   const [params, setParams] = useSearchParams();
   const sourceId = params.get("source") ?? selectedSource?.id ?? sources.find((s) => s.versions.length > 1)?.id ?? sources[0]?.id ?? null;
   const source = sources.find((s) => s.id === sourceId) ?? null;
@@ -98,8 +101,10 @@ export default function FeedComparePage() {
   const qA = useVersionListings(versionA);
   const qB = useVersionListings(versionB);
   const diff: VersionDiff | null = useMemo(
-    () => (qA.data && qB.data && versionA?.id !== versionB?.id ? diffListings(qA.data, qB.data) : null),
-    [qA.data, qB.data, versionA?.id, versionB?.id],
+    () => (qA.data && qB.data && versionA?.id !== versionB?.id ? diffListings(qA.data, qB.data, overrides) : null),
+    // The model key re-runs matching when a newly trained model becomes active.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [qA.data, qB.data, versionA?.id, versionB?.id, overrides, matchModelKey],
   );
 
   const [tab, setTab] = useState<Tab>(tabFromHash);
@@ -233,6 +238,7 @@ function Results({
   hrefB: (l: Listing) => string | undefined;
 }) {
   const prices = useMemo(() => priceMoveRows(diff), [diff]);
+  const sides = useMemo(() => ({ before: `Before · v${a.number}`, after: `After · v${b.number}` }), [a.number, b.number]);
   const cats = useMemo(() => categoryCounts(diff), [diff]);
   const bands = useMemo(() => priceChangeBands(prices), [prices]);
   const gaps = useMemo(() => completenessByField(diff), [diff]);
@@ -308,13 +314,13 @@ function Results({
       )}
 
       <section aria-live="polite">
-        {tab === "changed" && <ChangedPanel diff={diff} hrefB={hrefB} />}
+        {tab === "changed" && <ChangedPanel diff={diff} hrefB={hrefB} labels={sides} />}
         {tab === "price" && <PricePanel rows={prices} hrefB={hrefB} />}
         {tab === "added" && <ListingPanel listings={diff.added} empty="Nothing new." href={hrefB} />}
         {tab === "removed" && <ListingPanel listings={diff.removed} empty="Nothing removed." href={hrefA} />}
-        {tab === "relisted" && <RelistedPanel diff={diff} hrefB={hrefB} />}
+        {tab === "relisted" && <RelistedPanel diff={diff} hrefB={hrefB} labels={sides} />}
         {tab === "review" && <ReviewPanel diff={diff} />}
-        {tab === "data" && <DataPanel diff={diff} gaps={gaps} hrefB={hrefB} />}
+        {tab === "data" && <DataPanel diff={diff} gaps={gaps} hrefB={hrefB} labels={sides} />}
         {tab === "dupes" && (
           <DupesPanel references={diff.duplicates} clusters={dupes?.clusters ?? null} possible={dupes?.possible ?? null} hrefB={hrefB} />
         )}
@@ -332,7 +338,9 @@ function SearchBox({ value, onChange, placeholder = "Search title, reference, co
   );
 }
 
-function ChangedPanel({ diff, hrefB }: { diff: VersionDiff; hrefB: (l: Listing) => string | undefined }) {
+type Sides = { before: string; after: string };
+
+function ChangedPanel({ diff, hrefB, labels }: { diff: VersionDiff; hrefB: (l: Listing) => string | undefined; labels: Sides }) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState<ChangeCategory | "all">("all");
   const [includeMinor, setIncludeMinor] = useState(true);
@@ -382,7 +390,7 @@ function ChangedPanel({ diff, hrefB }: { diff: VersionDiff; hrefB: (l: Listing) 
       ) : (
         <ul className="space-y-2">
           {visible.map((c, i) => (
-            <ListingChangeRow key={`${c.after.reference}-${i}`} before={c.before} after={c.after} changes={c.changes} href={hrefB(c.after)} defaultOpen={i === 0} />
+            <ListingChangeRow key={`${c.after.reference}-${i}`} before={c.before} after={c.after} changes={c.changes} href={hrefB(c.after)} defaultOpen={i === 0} labels={labels} />
           ))}
         </ul>
       )}
@@ -491,7 +499,7 @@ function ListingPanel({ listings, empty, href }: { listings: Listing[]; empty: s
   );
 }
 
-function RelistedPanel({ diff, hrefB }: { diff: VersionDiff; hrefB: (l: Listing) => string | undefined }) {
+function RelistedPanel({ diff, hrefB, labels }: { diff: VersionDiff; hrefB: (l: Listing) => string | undefined; labels: Sides }) {
   const { visible, more } = usePaged(diff.relisted);
   if (!diff.relisted.length) return <Empty text="No property came back under a new reference." />;
   return (
@@ -508,13 +516,15 @@ function RelistedPanel({ diff, hrefB }: { diff: VersionDiff; hrefB: (l: Listing)
             after={r.after}
             changes={r.changes}
             href={hrefB(r.after)}
+            labels={labels}
             header={
               <div className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
                   <span className="font-mono text-muted-foreground line-through">{r.before.reference}</span>
                   <ArrowRight className="h-3 w-3" aria-hidden />
                   <span className="font-mono font-semibold">{r.after.reference}</span>
-                  <ScoreMeter score={r.score} threshold={MATCH_WEIGHTS.versions.match} />
+                  <ScoreMeter score={r.score} threshold={getMatchWeights().versions.match} />
+                  <VerdictButtons ids={[r.before.id, r.after.id]} context="versions" />
                 </div>
                 <EvidenceList evidence={r.evidence} limit={4} compact />
               </div>
@@ -534,7 +544,8 @@ function ReviewPanel({ diff }: { diff: VersionDiff }) {
     <div className="space-y-3">
       <Note>
         A removed listing and a new one that might be the same property, but the evidence is not strong enough to merge them
-        automatically. They stay counted as removed and new.
+        automatically. They stay counted as removed and new until someone confirms them; confirmed pairs count as relisted for
+        everyone, and every verdict trains the next model.
       </Note>
       <ul className="space-y-2">
         {visible.map((p, i) => (
@@ -544,8 +555,9 @@ function ReviewPanel({ diff }: { diff: VersionDiff }) {
               <MiniListing l={p.after} label="New" />
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <ScoreMeter score={p.score} threshold={MATCH_WEIGHTS.versions.match} />
+              <ScoreMeter score={p.score} threshold={getMatchWeights().versions.match} />
               <EvidenceList evidence={p.evidence} limit={5} compact />
+              <VerdictButtons ids={[p.before.id, p.after.id]} context="versions" className="ml-auto" />
             </div>
           </li>
         ))}
@@ -571,7 +583,7 @@ function MiniListing({ l, label }: { l: Listing; label: string }) {
   );
 }
 
-function DataPanel({ diff, gaps, hrefB }: { diff: VersionDiff; gaps: ReturnType<typeof completenessByField>; hrefB: (l: Listing) => string | undefined }) {
+function DataPanel({ diff, gaps, hrefB, labels }: { diff: VersionDiff; gaps: ReturnType<typeof completenessByField>; hrefB: (l: Listing) => string | undefined; labels: Sides }) {
   const { visible, more } = usePaged(diff.completenessOnly);
   return (
     <div className="space-y-4">
@@ -603,7 +615,7 @@ function DataPanel({ diff, gaps, hrefB }: { diff: VersionDiff; gaps: ReturnType<
       )}
       <ul className="space-y-2">
         {visible.map((c, i) => (
-          <ListingChangeRow key={`${c.after.reference}-${i}`} before={c.before} after={c.after} changes={c.changes} href={hrefB(c.after)} />
+          <ListingChangeRow key={`${c.after.reference}-${i}`} before={c.before} after={c.after} changes={c.changes} href={hrefB(c.after)} labels={labels} />
         ))}
       </ul>
       {more}

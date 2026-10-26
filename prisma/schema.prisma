@@ -28,8 +28,10 @@ model User {
   createdAt    DateTime      @default(now())
   sessions     Session[]
   prefs        UserPref[]
-  versions     FeedVersion[]
-  auditEvents  AuditEvent[]
+  versions       FeedVersion[]
+  auditEvents    AuditEvent[]
+  matchDecisions MatchDecision[]
+  matchModels    MatchModel[]
 }
 
 model Session {
@@ -166,4 +168,45 @@ model ShareLink {
   createdAt    DateTime  @default(now())
 
   @@index([sourceId])
+}
+
+enum MatchVerdict {
+  same
+  different
+}
+
+/// A reviewer's verdict on a suggested "same property" pair or group. Applied before scoring, so it
+/// takes effect for everyone immediately, and used as labelled data when the model is retrained.
+model MatchDecision {
+  id          String       @id @default(cuid())
+  /// Sorted listing ids joined with "|": stable across re-runs while the same listings are grouped.
+  pairKey     String       @unique
+  listingIds  Json
+  verdict     MatchVerdict
+  /// "versions" (re-post within one feed) or "agencies" (across agencies).
+  context     String
+  createdById String?
+  createdBy   User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([updatedAt])
+}
+
+/// Learned property-matching weights. One row is active at a time; older rows are history for rollback.
+model MatchModel {
+  id          String    @id @default(cuid())
+  weights     Json
+  /// Precision / recall measured on held-out labelled pairs, training counts, gate result.
+  metrics     Json
+  active      Boolean   @default(false)
+  /// "auto" (scheduled background retrain) or "manual" (Retrain now).
+  trigger     String
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  activatedAt DateTime?
+
+  @@index([active])
+  @@index([createdAt])
 }

@@ -5,6 +5,7 @@ import { errorMiddleware } from "./http.js";
 import { authMiddleware } from "./auth/session.js";
 import { authRouter } from "./auth/routes.js";
 import { prefsRouter } from "./prefs/routes.js";
+import { matchingRouter } from "./matching/routes.js";
 import { adminRouter } from "./admin/routes.js";
 import { sourcesRouter } from "./sources/routes.js";
 import { blobRouter } from "./blob/routes.js";
@@ -35,6 +36,7 @@ export function createApp(deps: AppDeps): express.Express {
   app.use("/api", observabilityRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/prefs", prefsRouter);
+  app.use("/api/matching", matchingRouter);
   app.use("/api/admin", adminInvitesRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/invites", invitesRouter);
