@@ -1,6 +1,6 @@
 import type { ImportListingStatus } from "@/lib/types";
 
-const KEY = "feedviewer.listings.pageUi.v2";
+const KEY = "feedviewer.listings.pageUi.v3";
 
 export type ListingsPageUiSnapshot = {
   search: string;
@@ -14,7 +14,12 @@ export type ListingsPageUiSnapshot = {
   agent: string;
   city: string;
   furnished: string;
-  videoTourFilter: "all" | "has";
+  areaMin: string;
+  areaMax: string;
+  completion: string;
+  developer: string;
+  /** Keys of `LISTING_FEATURES` that must all hold. */
+  features: string[];
   sort: string;
   page: number;
   showFilters: boolean;

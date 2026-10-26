@@ -2,8 +2,28 @@ import AppHeader from "@/components/AppHeader";
 import { ListingsPageMapPanel } from "@/components/ListingsPageMapPanel";
 import PropertyCard from "@/components/PropertyCard";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import {
+  ChipChoice,
+  FilterSection,
+  RangePopover,
+  SearchableSelect,
+  Segmented,
+  ToggleChip,
+  type Option,
+} from "@/components/listings/FilterControls";
+import {
+  AREA_PRESETS,
+  completionOf,
+  FEATURE_KEYS,
+  LISTING_FEATURES,
+  readSavedViews,
+  RENT_PRESETS,
+  SALE_PRESETS,
+  writeSavedViews,
+  type FeatureKey,
+  type SavedView,
+} from "@/lib/listingFilters";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -41,8 +61,11 @@ import { formatDistanceToNow } from "date-fns";
 import {
     AlertTriangle,
     Banknote,
-    BookOpen,
+    Bookmark,
     Building2,
+    Hammer,
+    Ruler,
+    Sparkles,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
@@ -96,10 +119,14 @@ const ListingsPage = () => {
   const [agent, setAgent] = useState(() => readListingsPageUi()?.agent ?? "all");
   const [city, setCity] = useState(() => readListingsPageUi()?.city ?? "all");
   const [furnished, setFurnished] = useState(() => readListingsPageUi()?.furnished ?? "all");
-  /** "has" = only listings with a non-empty video tour URL */
-  const [videoTourFilter, setVideoTourFilter] = useState<"all" | "has">(
-    () => (readListingsPageUi()?.videoTourFilter === "has" ? "has" : "all"),
+  const [areaMin, setAreaMin] = useState(() => readListingsPageUi()?.areaMin ?? "");
+  const [areaMax, setAreaMax] = useState(() => readListingsPageUi()?.areaMax ?? "");
+  const [completion, setCompletion] = useState(() => readListingsPageUi()?.completion ?? "all");
+  const [developer, setDeveloper] = useState(() => readListingsPageUi()?.developer ?? "all");
+  const [features, setFeatures] = useState<FeatureKey[]>(() =>
+    (readListingsPageUi()?.features ?? []).filter((k): k is FeatureKey => FEATURE_KEYS.has(k)),
   );
+  const [savedViews, setSavedViews] = useState<SavedView[]>(readSavedViews);
   const [sort, setSort] = useState<SortKey>(() => {
     const s = readListingsPageUi()?.sort;
     return s && VALID_SORT.has(s) ? (s as SortKey) : "newest";
@@ -120,7 +147,6 @@ const ListingsPage = () => {
   );
   const [gridColumnCount, setGridColumnCount] = useState(() => readListingsGridColumnCount());
   const [viewZoom, setViewZoom] = useState(() => readListingsZoom());
-  const [filterGuideOpen, setFilterGuideOpen] = useState(false);
   const [recentEntries, setRecentEntries] = useState<RecentListingEntry[]>(() => getRecentListings());
   /** CSS `zoom` + browser pinch-zoom causes overlapping layout on small screens; disable in-page zoom here. */
   const [coarseLayout, setCoarseLayout] = useState(() =>
@@ -180,7 +206,11 @@ const ListingsPage = () => {
         agent,
         city,
         furnished,
-        videoTourFilter,
+        areaMin,
+        areaMax,
+        completion,
+        developer,
+        features,
         sort,
         page,
         showFilters,
@@ -201,7 +231,11 @@ const ListingsPage = () => {
     agent,
     city,
     furnished,
-    videoTourFilter,
+    areaMin,
+    areaMax,
+    completion,
+    developer,
+    features,
     sort,
     page,
     showFilters,
@@ -244,24 +278,50 @@ const ListingsPage = () => {
   const favoritesSet = favorites.ids;
   const compareSet = useMemo(() => new Set(getCompareListingIds()), [compareTick]);
 
-  const communities = useMemo(
-    () => Array.from(new Set(allListings.map((l) => l.community).filter(Boolean))).sort(),
-    [allListings],
-  );
-  const propTypes = useMemo(
-    () => Array.from(new Set(allListings.map((l) => l.propertyType).filter(Boolean))).sort(),
-    [allListings],
-  );
-  const cities = useMemo(
-    () => Array.from(new Set(allListings.map((l) => l.city).filter(Boolean))).sort(),
-    [allListings],
-  );
-
-  const agents = useMemo(() => {
-    return Array.from(new Set(allListings.map((l) => l.agent?.name).filter(Boolean) as string[])).sort();
-  }, [allListings]);
-  const furnishedOptions = useMemo(() => {
-    return Array.from(new Set(allListings.map((l) => l.furnished).filter(Boolean))).sort();
+  /** Every facet in one pass over the scope, with counts so options show how much they hold. */
+  const facets = useMemo(() => {
+    const tally = () => new Map<string, number>();
+    const f = {
+      community: tally(),
+      propType: tally(),
+      city: tally(),
+      agent: tally(),
+      furnished: tally(),
+      developer: tally(),
+    };
+    const bump = (m: Map<string, number>, k: string | undefined) => {
+      const v = k?.trim();
+      if (v) m.set(v, (m.get(v) ?? 0) + 1);
+    };
+    const purposeCount = { sale: 0, rent: 0 };
+    const featureCount = Object.fromEntries(LISTING_FEATURES.map((x) => [x.key, 0])) as Record<FeatureKey, number>;
+    const completionCount = { ready: 0, offplan: 0 };
+    for (const l of allListings) {
+      bump(f.community, l.community);
+      bump(f.propType, l.propertyType);
+      bump(f.city, l.city);
+      bump(f.agent, l.agent?.name);
+      bump(f.furnished, l.furnished);
+      bump(f.developer, l.developer);
+      if (l.purpose === "sale") purposeCount.sale++;
+      else if (l.purpose === "rent") purposeCount.rent++;
+      for (const x of LISTING_FEATURES) if (x.test(l)) featureCount[x.key]++;
+      const c = completionOf(l);
+      if (c) completionCount[c]++;
+    }
+    const opts = (m: Map<string, number>): Option[] =>
+      [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([value, count]) => ({ value, label: value, count }));
+    return {
+      communities: opts(f.community),
+      propTypes: opts(f.propType),
+      cities: opts(f.city),
+      agents: opts(f.agent),
+      furnished: opts(f.furnished),
+      developers: opts(f.developer),
+      purposeCount,
+      featureCount,
+      completionCount,
+    };
   }, [allListings]);
 
   /**
@@ -285,23 +345,32 @@ const ListingsPage = () => {
     // treated as unset, and changing that here would alter which listings match.
     const priceMinNum = priceMin ? Number(priceMin) : null;
     const priceMaxNum = priceMax ? Number(priceMax) : null;
-    const bedsNum = beds && beds !== "any" ? Number(beds) : null;
-    const bathsNum = baths && baths !== "any" ? Number(baths) : null;
+    const bedsNum = beds && beds !== "any" ? parseInt(beds, 10) : null;
+    const bedsPlus = beds.endsWith("+");
+    const bathsNum = baths && baths !== "any" ? parseInt(baths, 10) : null;
+    const bathsPlus = baths.endsWith("+");
+    const areaMinNum = areaMin ? Number(areaMin) : null;
+    const areaMaxNum = areaMax ? Number(areaMax) : null;
+    const featureTests = LISTING_FEATURES.filter((x) => features.includes(x.key)).map((x) => x.test);
 
     // .filter() already returns a fresh array, so the later sort() needs no defensive copy.
     const items = allListings.filter((l) => {
       if (!listingMatchesQuery(searchHaystackById, l, q)) return false;
       if (priceMinNum !== null && !(l.price >= priceMinNum)) return false;
       if (priceMaxNum !== null && !(l.price <= priceMaxNum)) return false;
-      if (bedsNum !== null && l.beds !== bedsNum) return false;
-      if (bathsNum !== null && l.baths !== bathsNum) return false;
+      if (bedsNum !== null && (bedsPlus ? !(l.beds >= bedsNum) : l.beds !== bedsNum)) return false;
+      if (bathsNum !== null && (bathsPlus ? !(l.baths >= bathsNum) : l.baths !== bathsNum)) return false;
+      if (areaMinNum !== null && !(l.area >= areaMinNum)) return false;
+      if (areaMaxNum !== null && !(l.area <= areaMaxNum)) return false;
+      if (completion !== "all" && completionOf(l) !== completion) return false;
+      if (developer !== "all" && (l.developer || "").trim() !== developer) return false;
+      for (const t of featureTests) if (!t(l)) return false;
       if (propType !== "all" && l.propertyType !== propType) return false;
       if (community !== "all" && l.community !== community) return false;
       if (purpose !== "all" && l.purpose !== purpose) return false;
       if (agent !== "all" && (l.agent?.name || "") !== agent) return false;
       if (city !== "all" && l.city !== city) return false;
       if (furnished !== "all" && l.furnished !== furnished) return false;
-      if (videoTourFilter === "has" && (l.videoTourUrl || "").trim().length === 0) return false;
       if (statusFilter !== "all" && statusById.get(l.id) !== statusFilter) return false;
       return true;
     });
@@ -330,7 +399,11 @@ const ListingsPage = () => {
     agent,
     city,
     furnished,
-    videoTourFilter,
+    areaMin,
+    areaMax,
+    completion,
+    developer,
+    features,
     sort,
     statusFilter,
     statusById,
@@ -345,32 +418,69 @@ const ListingsPage = () => {
   const clearFilters = () => {
     setSearch(""); setPriceMin(""); setPriceMax(""); setBeds(""); setBaths("");
     setPropType("all"); setCommunity("all"); setPurpose("all"); setAgent("all");
-    setCity("all"); setFurnished("all"); setVideoTourFilter("all"); setStatusFilter("all"); setPage(1);
+    setCity("all"); setFurnished("all"); setStatusFilter("all");
+    setAreaMin(""); setAreaMax(""); setCompletion("all"); setDeveloper("all"); setFeatures([]);
+    setPage(1);
   };
+
+  /** Snapshot of every filter, for saved views. Search text is included: it is part of the question. */
+  const currentFilters = (): SavedView["filters"] => ({
+    search, priceMin, priceMax, beds, baths, propType, community, purpose, agent, city, furnished,
+    areaMin, areaMax, completion, developer, features, statusFilter,
+  });
+  const applyView = (v: SavedView) => {
+    const f = v.filters;
+    setSearch(f.search ?? ""); setPriceMin(f.priceMin ?? ""); setPriceMax(f.priceMax ?? "");
+    setBeds(f.beds ?? ""); setBaths(f.baths ?? ""); setPropType(f.propType ?? "all");
+    setCommunity(f.community ?? "all"); setPurpose(f.purpose ?? "all"); setAgent(f.agent ?? "all");
+    setCity(f.city ?? "all"); setFurnished(f.furnished ?? "all"); setAreaMin(f.areaMin ?? "");
+    setAreaMax(f.areaMax ?? ""); setCompletion(f.completion ?? "all"); setDeveloper(f.developer ?? "all");
+    setFeatures((f.features ?? []).filter((k): k is FeatureKey => FEATURE_KEYS.has(k)));
+    setStatusFilter(f.statusFilter ?? "all");
+    setPage(1);
+  };
+  const saveView = () => {
+    const name = window.prompt("Name this view", activeFilters.map((c) => c.label).slice(0, 3).join(" · "));
+    if (!name?.trim()) return;
+    const next = [{ id: String(Date.now()), name: name.trim().slice(0, 60), filters: currentFilters() }, ...savedViews].slice(0, 12);
+    setSavedViews(next);
+    writeSavedViews(next);
+  };
+  const deleteView = (id: string) => {
+    const next = savedViews.filter((v) => v.id !== id);
+    setSavedViews(next);
+    writeSavedViews(next);
+  };
+  const toggleFeature = (k: FeatureKey) => {
+    setFeatures((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
+    setPage(1);
+  };
+  const pricePresets = purpose === "rent" ? RENT_PRESETS : SALE_PRESETS;
 
   const activeFilters = useMemo(() => {
     const chips: { key: string; label: string; onClear: () => void }[] = [];
     if (search) chips.push({ key: "search", label: `"${search}"`, onClear: () => setSearch("") });
-    if (priceMin) chips.push({ key: "pmin", label: `Min ${priceMin}`, onClear: () => setPriceMin("") });
-    if (priceMax) chips.push({ key: "pmax", label: `Max ${priceMax}`, onClear: () => setPriceMax("") });
+    if (priceMin) chips.push({ key: "pmin", label: `Min ${formatPriceCompact(Number(priceMin))}`, onClear: () => setPriceMin("") });
+    if (priceMax) chips.push({ key: "pmax", label: `Max ${formatPriceCompact(Number(priceMax))}`, onClear: () => setPriceMax("") });
     if (beds && beds !== "any") chips.push({ key: "beds", label: beds === "0" ? "Studio" : `${beds} bed`, onClear: () => setBeds("") });
     if (baths && baths !== "any") chips.push({ key: "baths", label: `${baths} bath`, onClear: () => setBaths("") });
+    if (areaMin) chips.push({ key: "amin", label: `≥ ${Number(areaMin).toLocaleString()} sqft`, onClear: () => setAreaMin("") });
+    if (areaMax) chips.push({ key: "amax", label: `≤ ${Number(areaMax).toLocaleString()} sqft`, onClear: () => setAreaMax("") });
+    if (completion !== "all") chips.push({ key: "compl", label: completion === "ready" ? "Ready" : "Off-plan", onClear: () => setCompletion("all") });
+    if (developer !== "all") chips.push({ key: "dev", label: developer, onClear: () => setDeveloper("all") });
+    for (const fk of features) {
+      const def = LISTING_FEATURES.find((x) => x.key === fk);
+      if (def) chips.push({ key: `feat-${fk}`, label: def.label, onClear: () => setFeatures((p) => p.filter((x) => x !== fk)) });
+    }
     if (propType !== "all") chips.push({ key: "type", label: propType, onClear: () => setPropType("all") });
     if (community !== "all") chips.push({ key: "comm", label: community, onClear: () => setCommunity("all") });
     if (purpose !== "all") chips.push({ key: "purp", label: purpose === "sale" ? "For Sale" : "For Rent", onClear: () => setPurpose("all") });
     if (agent !== "all") chips.push({ key: "agent", label: agent, onClear: () => setAgent("all") });
     if (city !== "all") chips.push({ key: "city", label: city, onClear: () => setCity("all") });
     if (furnished !== "all") chips.push({ key: "furn", label: furnished, onClear: () => setFurnished("all") });
-    if (videoTourFilter === "has") {
-      chips.push({
-        key: "videoTour",
-        label: "Has video tour",
-        onClear: () => setVideoTourFilter("all"),
-      });
-    }
     if (statusFilter !== "all") chips.push({ key: "status", label: statusFilter, onClear: () => setStatusFilter("all") });
     return chips;
-  }, [search, priceMin, priceMax, beds, baths, propType, community, purpose, agent, city, furnished, videoTourFilter, statusFilter]);
+  }, [search, priceMin, priceMax, beds, baths, propType, community, purpose, agent, city, furnished, areaMin, areaMax, completion, developer, features, statusFilter]);
 
   /* ── Empty state ── */
   if (allListings.length === 0) {
@@ -637,7 +747,7 @@ const ListingsPage = () => {
                 className={cn("h-10 sm:h-9 w-full sm:w-auto min-h-[44px] sm:min-h-0 gap-1.5 rounded-xl border text-xs font-medium transition-all touch-manipulation", showFilters ? "border-primary/40 bg-primary/10 text-foreground" : "border-border bg-background text-muted-foreground hover:text-foreground hover:border-primary/25")}
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                Filters
+                More filters
                 {activeFilters.length > 0 && (
                   <span className="ml-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
                     {activeFilters.length}
@@ -732,157 +842,183 @@ const ListingsPage = () => {
           </div>
         )}
 
-        {/* Filter panel */}
+        {/* Quick filters — the four questions people ask first: rent or buy, how many beds, what type, what budget. */}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Segmented
+            label="Purpose"
+            value={purpose}
+            onChange={(v) => { setPurpose(v); setPriceMin(""); setPriceMax(""); setPage(1); }}
+            options={[
+              { value: "all", label: "All" },
+              { value: "sale", label: "Buy", count: facets.purposeCount.sale },
+              { value: "rent", label: "Rent", count: facets.purposeCount.rent },
+            ]}
+          />
+          <RangePopover
+            label="Price"
+            icon={<Banknote className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+            min={priceMin}
+            max={priceMax}
+            onChange={(lo, hi) => { setPriceMin(lo); setPriceMax(hi); setPage(1); }}
+            presets={pricePresets}
+            format={formatPriceCompact}
+          />
+          <SearchableSelect
+            placeholder="Property type"
+            allLabel="Any type"
+            icon={<Building2 className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+            value={propType}
+            onChange={(v) => { setPropType(v); setPage(1); }}
+            options={facets.propTypes}
+          />
+          <SearchableSelect
+            placeholder="Community"
+            allLabel="Any community"
+            icon={<MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+            value={community}
+            onChange={(v) => { setCommunity(v); setPage(1); }}
+            options={facets.communities}
+            className="max-w-[16rem]"
+          />
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Beds</span>
+            <ChipChoice
+              label="Bedrooms"
+              value={beds}
+              onChange={(v) => { setBeds(v); setPage(1); }}
+              options={[
+                { value: "0", label: "Studio" },
+                ...["1", "2", "3", "4", "5"].map((n) => ({ value: n, label: n })),
+                { value: "6+", label: "6+" },
+              ]}
+            />
+          </div>
+        </div>
+
+        {savedViews.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Bookmark className="h-3 w-3" aria-hidden /> Saved views
+            </span>
+            {savedViews.map((v) => (
+              <span key={v.id} className="inline-flex items-center rounded-full border border-border bg-card text-xs">
+                <button
+                  type="button"
+                  onClick={() => applyView(v)}
+                  className="rounded-l-full py-1 pl-3 pr-1.5 font-medium text-foreground hover:text-primary-text"
+                  title="Apply this view"
+                >
+                  {v.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteView(v.id)}
+                  aria-label={`Delete saved view ${v.name}`}
+                  className="rounded-r-full py-1 pl-1 pr-2 text-muted-foreground hover:text-destructive-text"
+                >
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* More filters */}
         {showFilters && (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden mb-5 shadow-[var(--shadow-card)] animate-fade-in">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 px-5 py-4 border-b border-border bg-accent/25">
+          <div className="mb-5 overflow-hidden rounded-2xl border border-border bg-card shadow-[var(--shadow-card)] animate-fade-in">
+            <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/40 px-5 py-3">
               <div>
-                <h2 className="text-sm font-bold font-heading text-foreground tracking-tight">Filter properties</h2>
-                <p className="text-xs text-muted-foreground mt-1 max-w-xl leading-relaxed">
-                  Combine fields below with the search bar. Every filter uses <strong className="text-foreground font-medium">AND</strong> logic — listings must match all active choices.
+                <h2 className="text-sm font-bold font-heading tracking-tight text-foreground">More filters</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Counts are for the current scope. Every active choice must match.
                 </p>
               </div>
-              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 shrink-0 text-xs text-muted-foreground hover:text-foreground gap-1 border border-border rounded-xl self-start">
-                <X className="w-3 h-3" /> Clear all
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 shrink-0 gap-1 rounded-xl border border-border text-xs text-muted-foreground hover:text-foreground">
+                <X className="h-3 w-3" /> Clear all
               </Button>
             </div>
 
-            <Collapsible open={filterGuideOpen} onOpenChange={setFilterGuideOpen} className="border-b border-border">
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-2 px-5 py-3 text-left text-xs font-semibold text-foreground hover:bg-accent/40 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <BookOpen className="w-3.5 h-3.5 text-primary-text shrink-0" />
-                    Quick guide — how filters work
-                  </span>
-                  <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform shrink-0", filterGuideOpen && "rotate-180")} />
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="px-5 pb-4">
-                <ul className="text-xs text-muted-foreground space-y-2.5 leading-relaxed border border-border/80 rounded-xl bg-background/50 p-4">
-                  <li>
-                    <span className="text-foreground font-medium">Search</span> scans title, description, city, community, building, reference, internal id, and agent name (partial match, not case-sensitive).
-                  </li>
-                  <li>
-                    <span className="text-foreground font-medium">Price min / max</span> include listings with a numeric price in range. Empty fields are ignored.
-                  </li>
-                  <li>
-                    <span className="text-foreground font-medium">Beds / baths</span> are exact matches. Studio = 0 beds.
-                  </li>
-                  <li>
-                    <span className="text-foreground font-medium">Type, community, city, furnished, purpose, agent</span> narrow to a single value from your current feed.
-                  </li>
-                  <li>
-                    <span className="text-foreground font-medium">Status</span> refers to the latest import diff (new / updated / duplicate), when available.
-                  </li>
-                  <li className="text-[11px] pt-1 border-t border-border/60">
-                    Active filters appear as chips under this panel; remove one at a time or use Clear all.
-                  </li>
-                </ul>
-              </CollapsibleContent>
-            </Collapsible>
-
-            <div className="p-5 space-y-8">
-              <section>
-                <h3 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-3 pb-2 border-b border-border/80">
-                  <Banknote className="w-3.5 h-3.5 text-primary-text" />
-                  Price range
-                </h3>
-                <p className="text-[11px] text-muted-foreground mb-3">Numeric asking price or rent in feed currency. Leave blank for no bound.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
-                  <Input placeholder="Min price" type="number" value={priceMin} onChange={e => { setPriceMin(e.target.value); setPage(1); }} className="h-10 bg-background border-border text-foreground placeholder:text-muted-foreground rounded-xl text-sm" />
-                  <Input placeholder="Max price" type="number" value={priceMax} onChange={e => { setPriceMax(e.target.value); setPage(1); }} className="h-10 bg-background border-border text-foreground placeholder:text-muted-foreground rounded-xl text-sm" />
+            <div className="grid gap-x-8 gap-y-7 p-5 md:grid-cols-2 xl:grid-cols-4">
+              <FilterSection title="Location" icon={<MapPin className="h-3.5 w-3.5 text-primary-text" />}>
+                <div className="flex flex-col gap-2">
+                  <SearchableSelect placeholder="City" allLabel="Any city" value={city} onChange={(v) => { setCity(v); setPage(1); }} options={facets.cities} />
+                  <SearchableSelect placeholder="Community" allLabel="Any community" value={community} onChange={(v) => { setCommunity(v); setPage(1); }} options={facets.communities} />
+                  {facets.developers.length > 0 && (
+                    <SearchableSelect
+                      placeholder="Developer"
+                      allLabel="Any developer"
+                      icon={<Hammer className="h-3.5 w-3.5 shrink-0" aria-hidden />}
+                      value={developer}
+                      onChange={(v) => { setDeveloper(v); setPage(1); }}
+                      options={facets.developers}
+                    />
+                  )}
                 </div>
-              </section>
+              </FilterSection>
 
-              <section>
-                <h3 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-3 pb-2 border-b border-border/80">
-                  <Building2 className="w-3.5 h-3.5 text-primary-text" />
-                  Property details
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {(
-                    [
-                      { val: beds || "any", set: (v: string) => { setBeds(v); setPage(1); }, placeholder: "Beds", options: [["any", "Any beds"], ...["0","1","2","3","4","5","6","7"].map(n => [n, n === "0" ? "Studio" : `${n} bed`])] },
-                      { val: baths || "any", set: (v: string) => { setBaths(v); setPage(1); }, placeholder: "Baths", options: [["any", "Any baths"], ...["1","2","3","4","5","6"].map(n => [n, `${n} bath`])] },
-                      { val: propType, set: (v: string) => { setPropType(v); setPage(1); }, placeholder: "Property type", options: [["all", "All types"], ...propTypes.map(t => [t, t])] },
-                      { val: furnished, set: (v: string) => { setFurnished(v); setPage(1); }, placeholder: "Furnished", options: [["all", "Any furnished"], ...furnishedOptions.map(f => [f, f])] },
-                      { val: purpose, set: (v: string) => { setPurpose(v); setPage(1); }, placeholder: "Purpose", options: [["all", "All purposes"], ["sale", "For sale"], ["rent", "For rent"]] },
-                      {
-                        val: videoTourFilter,
-                        set: (v: string) => {
-                          setVideoTourFilter(v as "all" | "has");
-                          setPage(1);
-                        },
-                        placeholder: "Video tour",
-                        options: [
-                          ["all", "Any (video tour)"],
-                          ["has", "Has video tour URL"],
-                        ],
-                      },
-                    ] as { val: string; set: (v: string) => void; placeholder: string; options: [string, string][] }[]
-                  ).map(({ val, set, placeholder, options }) => (
-                    <Select key={placeholder} value={val} onValueChange={set}>
-                      <SelectTrigger className="h-10 bg-background border-border text-foreground hover:border-primary/30 rounded-xl text-sm">
-                        <SelectValue placeholder={placeholder} />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover border-border text-foreground max-h-64">
-                        {options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+              <FilterSection title="Size & layout" icon={<Ruler className="h-3.5 w-3.5 text-primary-text" />}>
+                <RangePopover
+                  label="Built-up area"
+                  unit="sqft"
+                  min={areaMin}
+                  max={areaMax}
+                  onChange={(lo, hi) => { setAreaMin(lo); setAreaMax(hi); setPage(1); }}
+                  presets={AREA_PRESETS}
+                  format={(n) => n.toLocaleString()}
+                />
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground">Bathrooms</div>
+                  <ChipChoice
+                    label="Bathrooms"
+                    value={baths}
+                    onChange={(v) => { setBaths(v); setPage(1); }}
+                    options={[...["1", "2", "3", "4"].map((n) => ({ value: n, label: n })), { value: "5+", label: "5+" }]}
+                  />
+                </div>
+              </FilterSection>
+
+              <FilterSection title="Status & features" icon={<Sparkles className="h-3.5 w-3.5 text-primary-text" />}>
+                <Segmented
+                  label="Completion"
+                  value={completion}
+                  onChange={(v) => { setCompletion(v); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Any" },
+                    { value: "ready", label: "Ready", count: facets.completionCount.ready },
+                    { value: "offplan", label: "Off-plan", count: facets.completionCount.offplan },
+                  ]}
+                />
+                {facets.furnished.length > 0 && (
+                  <SearchableSelect placeholder="Furnishing" allLabel="Any furnishing" value={furnished} onChange={(v) => { setFurnished(v); setPage(1); }} options={facets.furnished} />
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {LISTING_FEATURES.map((f) => (
+                    <ToggleChip
+                      key={f.key}
+                      on={features.includes(f.key)}
+                      onToggle={() => toggleFeature(f.key)}
+                      count={facets.featureCount[f.key]}
+                    >
+                      {f.label}
+                    </ToggleChip>
                   ))}
                 </div>
-              </section>
+              </FilterSection>
 
-              <section>
-                <h3 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-3 pb-2 border-b border-border/80">
-                  <MapPin className="w-3.5 h-3.5 text-primary-text" />
-                  Location
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {(
-                    [
-                      { val: city, set: (v: string) => { setCity(v); setPage(1); }, placeholder: "City", options: [["all", "All cities"], ...cities.map(c => [c, c])] },
-                      { val: community, set: (v: string) => { setCommunity(v); setPage(1); }, placeholder: "Community", options: [["all", "All communities"], ...communities.map(c => [c, c])] },
-                    ] as { val: string; set: (v: string) => void; placeholder: string; options: [string, string][] }[]
-                  ).map(({ val, set, placeholder, options }) => (
-                    <Select key={placeholder} value={val} onValueChange={set}>
-                      <SelectTrigger className="h-10 bg-background border-border text-foreground hover:border-primary/30 rounded-xl text-sm">
-                        <SelectValue placeholder={placeholder} />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover border-border text-foreground max-h-64">
-                        {options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ))}
-                </div>
-              </section>
-
-              <section>
-                <h3 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground mb-3 pb-2 border-b border-border/80">
-                  <User className="w-3.5 h-3.5 text-primary-text" />
-                  People & import
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {(
-                    [
-                      { val: agent, set: (v: string) => { setAgent(v); setPage(1); }, placeholder: "Agent", options: [["all", "All agents"], ...agents.map(a => [a, a])] },
-                      { val: statusFilter, set: (v: string) => { setStatusFilter(v as "all" | ImportListingStatus); setPage(1); }, placeholder: "Import status", options: [["all", "All statuses"], ["new", "New"], ["updated", "Updated"], ["duplicate", "Duplicate"]] },
-                    ] as { val: string; set: (v: string) => void; placeholder: string; options: [string, string][] }[]
-                  ).map(({ val, set, placeholder, options }) => (
-                    <Select key={placeholder} value={val} onValueChange={set}>
-                      <SelectTrigger className="h-10 bg-background border-border text-foreground hover:border-primary/30 rounded-xl text-sm">
-                        <SelectValue placeholder={placeholder} />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover border-border text-foreground max-h-64">
-                        {options.map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ))}
-                </div>
-              </section>
+              <FilterSection title="People & import" icon={<User className="h-3.5 w-3.5 text-primary-text" />}>
+                <SearchableSelect placeholder="Agent" allLabel="Any agent" value={agent} onChange={(v) => { setAgent(v); setPage(1); }} options={facets.agents} />
+                <Segmented
+                  label="Import status"
+                  value={statusFilter}
+                  onChange={(v) => { setStatusFilter(v as "all" | ImportListingStatus); setPage(1); }}
+                  options={[
+                    { value: "all", label: "Any" },
+                    { value: "new", label: "New" },
+                    { value: "updated", label: "Updated" },
+                    { value: "duplicate", label: "Dupes" },
+                  ]}
+                />
+              </FilterSection>
             </div>
           </div>
         )}
@@ -908,6 +1044,13 @@ const ListingsPage = () => {
               className="px-3 py-1 rounded-full border border-border text-muted-foreground text-xs hover:text-foreground hover:border-primary/25 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/40"
             >
               Clear all
+            </button>
+            <button
+              type="button"
+              onClick={saveView}
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-dashed border-primary/35 text-primary-text text-xs font-medium hover:bg-primary/10 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/40"
+            >
+              <Bookmark className="w-3 h-3" aria-hidden /> Save view
             </button>
           </div>
         )}

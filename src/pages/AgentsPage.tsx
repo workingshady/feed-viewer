@@ -17,11 +17,23 @@ import {
 import { Card } from "@/components/ui/card";
 import { useAppData } from "@/providers/DataProvider";
 import type { Listing } from "@/lib/types";
-import { AgentCard, summarizeAgents, usePaged } from "@/components/AgentCard";
+import { AgentCard, summarizeAgents, usePaged, type AgentSummary } from "@/components/AgentCard";
 import { downloadText } from "@/components/sources/format";
 import { toCsv } from "@/lib/reports";
+import { cn } from "@/lib/utils";
 
-type SortKey = "count_desc" | "count_asc" | "name_asc" | "avg_price_desc";
+type SortKey = "count_desc" | "count_asc" | "name_asc" | "avg_price_desc" | "sale_desc" | "rent_desc";
+
+/** Directory quick filters — each narrows the list; all active ones must match. */
+const AGENT_FLAGS = [
+  { key: "photo", label: "Has photo", test: (a: AgentSummary) => !!a.photo.trim() },
+  { key: "brn", label: "Has BRN", test: (a: AgentSummary) => !!a.licenseNo },
+  { key: "gaps", label: "Missing contact", test: (a: AgentSummary) => a.missingPhone > 0 || a.missingEmail > 0 },
+  { key: "people", label: "People only", test: (a: AgentSummary) => !a.isAgencyAccount },
+  { key: "sale", label: "Sells", test: (a: AgentSummary) => a.sale > 0 },
+  { key: "rent", label: "Leases", test: (a: AgentSummary) => a.rent > 0 },
+] as const;
+type AgentFlag = (typeof AGENT_FLAGS)[number]["key"];
 
 function safeNum(n: number) {
   return Number.isFinite(n) ? n : 0;
@@ -40,6 +52,15 @@ const ALL_AGENCIES = "__all__";
 const AgentsPage = () => {
   const { listingsByAgency } = useAppData();
   const [q, setQ] = useState("");
+  const [flags, setFlags] = useState<Set<AgentFlag>>(() => new Set());
+  const toggleFlag = (k: AgentFlag) =>
+    setFlags((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+
   const [sort, setSort] = useState<SortKey>("count_desc");
   const [agencyKey, setAgencyKey] = useState<string>(ALL_AGENCIES);
 
@@ -78,13 +99,19 @@ const AgentsPage = () => {
   const agents = useMemo(() => {
     const arr = [...allAgents];
     const query = q.trim().toLowerCase();
-    const filtered = !query
-      ? arr
-      : arr.filter(
-          (a) =>
-            a.name.toLowerCase().includes(query) ||
-            a.topCommunities.join(" ").toLowerCase().includes(query),
-        );
+    const digits = query.replace(/\D+/g, "");
+    const active = AGENT_FLAGS.filter((f) => flags.has(f.key));
+    const filtered = arr.filter(
+      (a) =>
+        active.every((f) => f.test(a)) &&
+        (!query ||
+          a.name.toLowerCase().includes(query) ||
+          a.agency.toLowerCase().includes(query) ||
+          a.email.toLowerCase().includes(query) ||
+          a.licenseNo.toLowerCase().includes(query) ||
+          (digits.length >= 4 && a.phone.replace(/\D+/g, "").includes(digits)) ||
+          a.topCommunities.join(" ").toLowerCase().includes(query)),
+    );
     filtered.sort((a, b) => {
       switch (sort) {
         case "count_asc":
@@ -93,12 +120,16 @@ const AgentsPage = () => {
           return a.name.localeCompare(b.name);
         case "avg_price_desc":
           return (b.medianSale ?? 0) - (a.medianSale ?? 0);
+        case "sale_desc":
+          return b.sale - a.sale;
+        case "rent_desc":
+          return b.rent - a.rent;
         default:
           return b.count - a.count;
       }
     });
     return filtered;
-  }, [allAgents, q, sort]);
+  }, [allAgents, q, sort, flags]);
   const paged = usePaged(agents);
 
   const exportCsv = () => {
@@ -192,7 +223,7 @@ const AgentsPage = () => {
                   <Input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search agents or communities…"
+                    placeholder="Name, agency, BRN, phone, email, area…"
                     className="pl-10"
                   />
                 </div>
@@ -213,6 +244,8 @@ const AgentsPage = () => {
                   <SelectContent>
                     <SelectItem value="count_desc">Most listings</SelectItem>
                     <SelectItem value="count_asc">Fewest listings</SelectItem>
+                    <SelectItem value="sale_desc">Most sale listings</SelectItem>
+                    <SelectItem value="rent_desc">Most rent listings</SelectItem>
                     <SelectItem value="avg_price_desc">
                       Highest median sale price
                     </SelectItem>
@@ -244,10 +277,49 @@ const AgentsPage = () => {
             )}
           </TabsContent>
           <TabsContent value="directory">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              {AGENT_FLAGS.map((f) => {
+                const on = flags.has(f.key);
+                const n = allAgents.filter(f.test).length;
+                return (
+                  <button
+                    key={f.key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleFlag(f.key)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      on
+                        ? "border-primary/30 bg-primary/10 text-primary-text"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/25 hover:text-foreground",
+                    )}
+                  >
+                    {f.label}
+                    <span className="tabular-nums opacity-70">{n.toLocaleString()}</span>
+                  </button>
+                );
+              })}
+              <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                Showing {agents.length.toLocaleString()} of {allAgents.length.toLocaleString()}
+              </span>
+              {(flags.size > 0 || q) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => {
+                    setFlags(new Set());
+                    setQ("");
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
             {agents.length === 0 ? (
-              q ? (
+              q || flags.size > 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">
-                  No agents match "{q}".
+                  No agents match these filters.
                 </p>
               ) : (
                 noAgents
@@ -260,6 +332,7 @@ const AgentsPage = () => {
                       key={`${agencyKey}:${a.name}:${a.email}`}
                       agent={a}
                       href={profileHref(a.name)}
+                      showAgency={agencyKey === ALL_AGENCIES}
                     />
                   ))}
                 </div>

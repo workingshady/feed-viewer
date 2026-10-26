@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Mail, Phone } from "lucide-react";
+import { ArrowRight, BadgeCheck, Building2, Check, Mail, MapPin, Phone } from "lucide-react";
+import { PersonAvatar } from "@/components/PersonAvatar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,8 @@ export type AgentSummary = {
   missingEmail: number;
   /** The "agent" is actually the agency's own account (name matches an agency). */
   isAgencyAccount: boolean;
+  /** Source (agency) most of this agent's listings come from; "" when unknown. */
+  agency: string;
 };
 
 const median = (v: number[]) => {
@@ -38,7 +41,10 @@ const median = (v: number[]) => {
 /** Groups listings by agent (by email, then phone, then name) with per-agent stats. */
 export function summarizeAgents(listings: Listing[], agencyNames: string[] = []): AgentSummary[] {
   const agencies = new Set(agencyNames.map((n) => n.trim().toLowerCase()));
-  const map = new Map<string, AgentSummary & { _sale: number[]; _comm: Map<string, number> }>();
+  const map = new Map<
+    string,
+    AgentSummary & { _sale: number[]; _comm: Map<string, number>; _agency: Map<string, number> }
+  >();
   for (const l of listings) {
     const name = l.agent?.name?.trim();
     if (!name) continue;
@@ -61,8 +67,10 @@ export function summarizeAgents(listings: Listing[], agencyNames: string[] = [])
         missingPhone: 0,
         missingEmail: 0,
         isAgencyAccount: agencies.has(name.toLowerCase()),
+        agency: "",
         _sale: [],
         _comm: new Map(),
+        _agency: new Map(),
       };
       map.set(key, a);
     }
@@ -81,65 +89,120 @@ export function summarizeAgents(listings: Listing[], agencyNames: string[] = [])
     if (!l.agent.email?.trim()) a.missingEmail++;
     const c = l.community?.trim();
     if (c) a._comm.set(c, (a._comm.get(c) ?? 0) + 1);
+    const src = l.sourceAgency?.trim();
+    if (src) a._agency.set(src, (a._agency.get(src) ?? 0) + 1);
   }
-  return [...map.values()].map(({ _sale, _comm, ...a }) => ({
+  const top = (m: Map<string, number>) => [...m.entries()].sort((x, y) => y[1] - x[1]);
+  return [...map.values()].map(({ _sale, _comm, _agency, ...a }) => ({
     ...a,
+    agency: top(_agency)[0]?.[0] ?? "",
     medianSale: median(_sale),
-    topCommunities: [..._comm.entries()].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([c]) => c),
+    topCommunities: top(_comm).slice(0, 3).map(([c]) => c),
   }));
 }
 
-const initials = (name: string) =>
-  name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-
-function Avatar({ src, name }: { src: string; name: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) {
-    return (
-      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-muted font-heading text-sm font-bold text-muted-foreground">
-        {initials(name)}
-      </span>
-    );
-  }
+function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <img
-      src={src}
-      alt=""
-      loading="lazy"
-      referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
-      className="h-14 w-14 shrink-0 rounded-full object-cover object-top"
-    />
+    <div className="min-w-0 rounded-xl bg-muted/60 px-2.5 py-1.5 ring-1 ring-inset ring-border/60">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="truncate font-heading text-sm font-bold tabular-nums text-foreground">{value}</div>
+    </div>
   );
 }
 
-/** Compact agent row card: avatar, name, areas, inventory and contact completeness. */
-export function AgentCard({ agent, href }: { agent: AgentSummary; href: string }) {
-  const contactOk = agent.missingPhone === 0 && agent.missingEmail === 0;
+function ContactState({ icon: Icon, missing, label }: { icon: typeof Phone; missing: number; label: string }) {
   return (
-    <Link to={href} className="block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      <Card className="flex h-full items-start gap-3 p-4 transition-colors hover:border-primary/40">
-        <Avatar src={agent.photo} name={agent.name} />
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex items-start justify-between gap-2">
-            <span className="truncate font-semibold">{agent.name}</span>
-            <span className="shrink-0 rounded-md bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">{agent.count}</span>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+        missing
+          ? "bg-warning/10 text-warning ring-warning/25"
+          : "bg-success/10 text-success ring-success/20",
+      )}
+      title={missing ? `${missing} listing${missing === 1 ? "" : "s"} without ${label}` : `${label} on every listing`}
+    >
+      <Icon className="h-3 w-3" aria-hidden />
+      {missing ? `${missing} no ${label}` : label}
+      {!missing && <Check className="h-3 w-3" aria-hidden />}
+    </span>
+  );
+}
+
+/**
+ * Agent card: photo, identity (licence, agency), inventory split and contact completeness.
+ * Pass `showAgency={false}` inside an agency page, where the agency is already the context.
+ */
+export function AgentCard({
+  agent,
+  href,
+  showAgency = true,
+}: {
+  agent: AgentSummary;
+  href: string;
+  showAgency?: boolean;
+}) {
+  return (
+    <Link
+      to={href}
+      className="group block h-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Card className="flex h-full flex-col gap-3 rounded-2xl p-4 shadow-[var(--shadow-card)] transition-[border-color,box-shadow,transform] duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/35 group-hover:shadow-[var(--shadow-card-hover)]">
+        <div className="flex items-start gap-3.5">
+          <PersonAvatar src={agent.photo} name={agent.name} shape="rounded" className="h-16 w-16 text-base" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="truncate font-heading text-[15px] font-bold leading-tight text-foreground" title={agent.name}>
+                {agent.name}
+              </h3>
+              <span
+                className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold tabular-nums text-primary-text ring-1 ring-inset ring-primary/20"
+                title={`${agent.count} listings`}
+              >
+                {agent.count.toLocaleString()}
+              </span>
+            </div>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              {agent.isAgencyAccount && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning ring-1 ring-inset ring-warning/25">
+                  <Building2 className="h-3 w-3" aria-hidden /> Agency account
+                </span>
+              )}
+              {agent.licenseNo && (
+                <span className="inline-flex items-center gap-1 font-mono text-[11px]">
+                  <BadgeCheck className="h-3 w-3 text-primary-text" aria-hidden /> BRN {agent.licenseNo}
+                </span>
+              )}
+              {showAgency && agent.agency && !agent.isAgencyAccount && (
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <Building2 className="h-3 w-3 shrink-0" aria-hidden />
+                  <span className="truncate">{agent.agency}</span>
+                </span>
+              )}
+            </div>
+            {agent.topCommunities.length > 0 && (
+              <p className="mt-1.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground" title={agent.topCommunities.join(" · ")}>
+                <MapPin className="h-3 w-3 shrink-0 text-primary-text/80" aria-hidden />
+                <span className="truncate">{agent.topCommunities.join(" · ")}</span>
+              </p>
+            )}
           </div>
-          {agent.isAgencyAccount && <p className="text-xs text-warning">Agency account, not a person</p>}
-          {agent.licenseNo && <p className="font-mono text-[11px] text-muted-foreground">BRN {agent.licenseNo}</p>}
-          <p className="truncate text-xs text-muted-foreground">{agent.topCommunities.join(" · ") || "—"}</p>
-          <p className="text-xs text-muted-foreground">
-            {agent.sale} sale · {agent.rent} rent
-            {agent.medianSale ? ` · median sale ${formatPriceCompact(agent.medianSale)}` : ""}
-          </p>
-          <p className={cn("flex items-center gap-2 text-xs", contactOk ? "text-muted-foreground" : "text-warning")}>
-            <Phone className="h-3 w-3" aria-hidden /> {agent.missingPhone ? `${agent.missingPhone} without phone` : "phone"}
-            <Mail className="h-3 w-3" aria-hidden /> {agent.missingEmail ? `${agent.missingEmail} without email` : "email"}
-          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label="Sale" value={agent.sale.toLocaleString()} />
+          <Stat label="Rent" value={agent.rent.toLocaleString()} />
+          <Stat label="Median sale" value={agent.medianSale ? formatPriceCompact(agent.medianSale) : "—"} />
+        </div>
+
+        <div className="mt-auto flex items-center justify-between gap-2 border-t border-border/70 pt-3">
+          <div className="flex flex-wrap gap-1.5">
+            <ContactState icon={Phone} missing={agent.missingPhone} label="phone" />
+            <ContactState icon={Mail} missing={agent.missingEmail} label="email" />
+          </div>
+          <ArrowRight
+            className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary-text"
+            aria-hidden
+          />
         </div>
       </Card>
     </Link>

@@ -18,6 +18,7 @@ const agent = (o: Partial<AgentSummary>): AgentSummary => ({
   missingPhone: 0,
   missingEmail: 0,
   isAgencyAccount: false,
+  agency: "",
   ...o,
 });
 

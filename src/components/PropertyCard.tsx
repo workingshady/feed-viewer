@@ -2,7 +2,7 @@ import {
   addCompareListingId,
   removeCompareListingId,
 } from "@/lib/compareSelection";
-import { formatPriceCompact, RENT_PERIOD_LABEL } from "@/lib/displayPrice";
+import { formatPriceCompact } from "@/lib/displayPrice";
 import { isListingFieldFilled } from "@/lib/listingFieldPresence";
 import { canPlayInlineOnSite, isYouTubeVideoUrl, normalizeVideoTourPageUrl } from "@/lib/videoTourUrl";
 import { VideoTourPlayer } from "@/components/VideoTourPlayer";
@@ -10,9 +10,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { useFavorites } from "@/hooks/usePrefs";
 import type { ImportListingStatus } from "@/lib/types";
 import { Listing } from "@/lib/types";
-import { AgentPhoto } from "@/components/AgentPhoto";
+import { PersonAvatar } from "@/components/PersonAvatar";
+import { AgencyLogo } from "@/components/AgencyLogo";
+import { useAppData } from "@/providers/DataProvider";
 import { cn } from "@/lib/utils";
-import { Bath, Bed, Building2, ChevronLeft, ChevronRight, Columns2, Hash, Heart, ImageOff, MapPin, Maximize, Play, Youtube } from "lucide-react";
+import { Bath, Bed, Camera, CarFront, ChevronLeft, ChevronRight, Columns2, Heart, ImageOff, MapPin, Maximize, Play, Sofa, Youtube } from "lucide-react";
 import { memo, useEffect, useRef, useState, type MouseEvent } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
@@ -52,6 +54,27 @@ function Highlight({ text, query }: { text: string; query: string }) {
 }
 
 const HOVER_SLIDE_MS = 1000;
+
+const RENT_SHORT: Record<string, string> = { yearly: "yr", monthly: "mo", weekly: "wk", daily: "day" };
+
+/** Feeds spell furnishing a dozen ways (Yes, furnished, semi, partly, No, unfurnished…). */
+function furnishedTag(raw: string | undefined): string {
+  const v = raw?.trim().toLowerCase() ?? "";
+  if (!v) return "";
+  if (v.startsWith("semi") || v.startsWith("part")) return "Semi-furnished";
+  if (v === "no" || v.startsWith("un") || v.startsWith("not")) return "Unfurnished";
+  if (v === "yes" || v.startsWith("furn") || v.startsWith("fully")) return "Furnished";
+  return "";
+}
+
+function Spec({ icon: Icon, children }: { icon: typeof Bed; children: React.ReactNode }) {
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-primary-text/75" aria-hidden />
+      <span className="truncate font-medium text-foreground tabular-nums">{children}</span>
+    </span>
+  );
+}
 
 const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavorite, inCompare }: Props) => {
   const favorites = useFavorites();
@@ -120,9 +143,17 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
   const imageTitleBase = (listing.title?.trim() || "Property").slice(0, 200);
   const priceOk = isListingFieldFilled(listing, "price");
   const purposeLabel = listing.purpose === "sale" ? "For Sale" : listing.purpose === "rent" ? "For Rent" : "";
-  const loc = listing.community || listing.city || listing.address || "Unknown location";
-  // The purpose badge and "per year" already say it's a rental; only sales get an eyebrow.
-  const priceEyebrow = listing.purpose === "sale" ? "Asking price" : "";
+  const locParts = [listing.subCommunity, listing.community, listing.city].map((x) => x?.trim()).filter(Boolean);
+  const loc = [...new Set(locParts)].slice(0, 2).join(" · ") || listing.address || "Unknown location";
+  const isPoa = String(listing.priceOnApplication || "").trim().toLowerCase() === "yes";
+  const perArea =
+    listing.purpose === "sale" && listing.price > 0 && listing.area > 0 ? Math.round(listing.price / listing.area) : 0;
+  const completion = listing.completionStatus?.toLowerCase() ?? "";
+  const readiness = completion.includes("off") ? "" : completion.includes("ready") || completion.includes("complete") ? "Ready" : "";
+  const furnishedLabel = furnishedTag(listing.furnished);
+  const { sources } = useAppData();
+  const agencyName = listing.sourceAgency?.trim() ?? "";
+  const agencyLogo = agencyName ? sources.find((x) => x.name === agencyName)?.agencyInfo?.logo : undefined;
   const videoTourRaw = listing.videoTourUrl?.trim() ?? "";
   const videoTourHref = normalizeVideoTourPageUrl(videoTourRaw);
   const hasVideoTour = !!videoTourHref;
@@ -140,7 +171,7 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
     <div
       data-testid="property-card"
       className={cn(
-        "group relative flex min-w-0 flex-col bg-card bg-gradient-to-b from-card to-muted/15 rounded-[1.75rem] overflow-hidden border border-border/90 ring-1 ring-black/[0.04] hover:ring-primary/30 hover:border-primary/40 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1.5 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] hover:shadow-primary/5 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary/40 w-full h-full",
+        "group relative flex min-w-0 flex-col bg-card rounded-[1.75rem] overflow-hidden border border-border/90 ring-1 ring-[hsl(var(--hairline))] hover:ring-primary/30 hover:border-primary/40 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1.5 shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] hover:shadow-primary/5 focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-primary/40 w-full h-full",
       )}
       onMouseEnter={() => setImageHover(true)}
       onMouseLeave={() => {
@@ -194,9 +225,9 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
               onMouseDown={swallowForLink}
               className={cn(
                 "absolute z-[4] top-1/2 -translate-y-1/2 flex items-center justify-center rounded-full",
-                "bg-background/85 backdrop-blur-sm border border-border/80 text-foreground shadow-md",
+                "border shadow-md bg-[hsl(var(--scrim)/0.38)] backdrop-blur-md border-on-media/20 text-on-media hover:bg-[hsl(var(--scrim)/0.55)]",
                 "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto",
-                "hover:bg-background transition-opacity duration-200 focus-visible:opacity-100 focus-visible:pointer-events-auto",
+                "transition-opacity duration-200 focus-visible:opacity-100 focus-visible:pointer-events-auto",
                 compact ? "left-1.5 w-7 h-7" : "left-2 w-9 h-9"
               )}
             >
@@ -210,9 +241,9 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
               onMouseDown={swallowForLink}
               className={cn(
                 "absolute z-[4] top-1/2 -translate-y-1/2 flex items-center justify-center rounded-full",
-                "bg-background/85 backdrop-blur-sm border border-border/80 text-foreground shadow-md",
+                "border shadow-md bg-[hsl(var(--scrim)/0.38)] backdrop-blur-md border-on-media/20 text-on-media hover:bg-[hsl(var(--scrim)/0.55)]",
                 "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto",
-                "hover:bg-background transition-opacity duration-200 focus-visible:opacity-100 focus-visible:pointer-events-auto",
+                "transition-opacity duration-200 focus-visible:opacity-100 focus-visible:pointer-events-auto",
                 compact ? "right-1.5 w-7 h-7" : "right-2 w-9 h-9"
               )}
             >
@@ -221,7 +252,9 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
           </>
         )}
 
-        <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent pointer-events-none" />
+        {/* Scrim, not a page-colour fade: photos stay vivid in both themes and white chips stay legible. */}
+        <div className="absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-[hsl(var(--scrim)/0.28)] to-transparent pointer-events-none" />
+        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-[hsl(var(--scrim)/0.5)] to-transparent pointer-events-none" />
 
         <div
           className={cn(
@@ -243,16 +276,16 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
             </span>
           )}
           {status === "new" && (
-            <span className={cn("rounded-full font-bold bg-emerald-500 text-white shadow-lg shrink-0", compact ? "px-2 py-px text-[10px]" : "px-2.5 py-0.5 text-[11px]")}>New</span>
+            <span className={cn("rounded-full font-bold bg-success text-success-foreground shadow-lg shrink-0", compact ? "px-2 py-px text-[10px]" : "px-2.5 py-0.5 text-[11px]")}>New</span>
           )}
           {status === "updated" && (
             <span className={cn("rounded-full font-bold bg-primary text-primary-foreground shadow-lg shrink-0", compact ? "px-2 py-px text-[10px]" : "px-2.5 py-0.5 text-[11px]")}>Updated</span>
           )}
           {status === "duplicate" && (
-            <span className={cn("rounded-full font-bold bg-yellow-500/90 text-black shadow-lg shrink-0", compact ? "px-2 py-px text-[10px]" : "px-2.5 py-0.5 text-[11px]")}>Duplicate</span>
+            <span className={cn("rounded-full font-bold bg-amber-400 text-amber-950 shadow-lg shrink-0", compact ? "px-2 py-px text-[10px]" : "px-2.5 py-0.5 text-[11px]")}>Duplicate</span>
           )}
           {listing.completionStatus?.toLowerCase().includes("off") && (
-            <span className={cn("rounded-full font-bold bg-sky-500/90 text-white shadow-lg shrink-0", compact ? "px-2 py-px text-[10px]" : "px-2.5 py-0.5 text-[11px]")}>Off-Plan</span>
+            <span className={cn("rounded-full font-bold bg-sky-600 text-white shadow-lg shrink-0", compact ? "px-2 py-px text-[10px]" : "px-2.5 py-0.5 text-[11px]")}>Off-Plan</span>
           )}
           {hasVideoTour && (
             <span
@@ -301,7 +334,7 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
               btn,
               cmp
                 ? "bg-primary text-primary-foreground border-primary/40 shadow-lg shadow-primary/30"
-                : "bg-background/80 backdrop-blur-sm border-border text-muted-foreground hover:text-foreground"
+                : "bg-[hsl(var(--scrim)/0.38)] backdrop-blur-md border-on-media/20 text-on-media hover:bg-[hsl(var(--scrim)/0.55)]"
             )}
             aria-label={cmp ? "Remove from compare" : "Add to compare"}
             aria-pressed={cmp}
@@ -313,15 +346,16 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
           {listing.images.length > 1 ? (
             <span
               className={cn(
-                "justify-self-center min-w-0 truncate text-center font-semibold bg-background/80 backdrop-blur-sm text-foreground/85 border border-border rounded-full tabular-nums max-w-full",
+                "justify-self-center inline-flex items-center gap-1 min-w-0 truncate font-semibold border rounded-full tabular-nums max-w-full bg-[hsl(var(--scrim)/0.38)] backdrop-blur-md border-on-media/20 text-on-media hover:bg-[hsl(var(--scrim)/0.55)]",
                 compact ? "px-1.5 py-px text-[9px]" : "px-2 py-0.5 text-[10px]"
               )}
             >
+              <Camera className={compact ? "w-2.5 h-2.5 shrink-0" : "w-3 h-3 shrink-0"} aria-hidden />
               {imageHover && !compact
                 ? `${hoverSlideIdx + 1}/${listing.images.length}`
                 : compact
                   ? `${listing.images.length}`
-                  : `${listing.images.length} photos`}
+                  : `${listing.images.length}`}
             </span>
           ) : (
             <span className="min-w-0" aria-hidden />
@@ -339,7 +373,7 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
               btn,
               fav
                 ? "bg-primary text-primary-foreground border-primary/40 shadow-lg shadow-primary/30"
-                : "bg-background/80 backdrop-blur-sm border-border text-muted-foreground hover:text-foreground"
+                : "bg-[hsl(var(--scrim)/0.38)] backdrop-blur-md border-on-media/20 text-on-media hover:bg-[hsl(var(--scrim)/0.55)]"
             )}
             aria-label={fav ? "Remove from saved listings" : "Save listing"}
             aria-pressed={fav}
@@ -350,39 +384,41 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
         </div>
       </div>
 
-      <div className="flex flex-col flex-1 min-w-0 p-5 sm:p-6 gap-3.5 overflow-hidden">
+      <div className={cn("flex flex-col flex-1 min-w-0 gap-3 overflow-hidden", compact ? "p-4" : "p-5")}>
         <div className="flex items-start justify-between gap-2 min-w-0">
           <div className="min-w-0">
-            {priceEyebrow && (
-              <div className="text-[10px] text-muted-foreground font-semibold uppercase tracking-[0.2em] mb-0.5">
-                {priceEyebrow}
-              </div>
-            )}
-            <div
-              className={cn(
-                "text-[22px] font-extrabold font-heading leading-tight tabular-nums tracking-tight",
-                priceOk ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
+            <div className="flex items-baseline gap-1 font-heading tabular-nums tracking-tight leading-none min-w-0">
               {listing.price ? (
                 <>
-                  <span className="text-muted-foreground font-semibold text-sm mr-1">{listing.currency}</span>
-                  {formatPriceCompact(listing.price)}
+                  <span className="text-xs font-semibold text-muted-foreground">{listing.currency}</span>
+                  <span className={cn("font-extrabold", priceOk ? "text-foreground" : "text-muted-foreground", compact ? "text-xl" : "text-[24px]")}>
+                    {formatPriceCompact(listing.price)}
+                  </span>
+                  {listing.purpose === "rent" && (
+                    <span className="text-xs font-medium text-muted-foreground">/{RENT_SHORT[listing.rentPeriod || "yearly"] ?? "yr"}</span>
+                  )}
                 </>
               ) : (
-                <span>{String(listing.priceOnApplication || "").trim().toLowerCase() === "yes" ? "POA" : "—"}</span>
+                <span className={cn("font-extrabold text-muted-foreground", compact ? "text-base" : "text-lg")}>
+                  {isPoa ? "Price on application" : "Price not set"}
+                </span>
               )}
             </div>
-            {listing.purpose === "rent" && (
-              <div className="text-[10px] text-muted-foreground mt-0.5">{RENT_PERIOD_LABEL[listing.rentPeriod || "yearly"]}</div>
+            {perArea > 0 && !compact && (
+              <div className="mt-1.5 text-[11px] text-muted-foreground tabular-nums">
+                {listing.currency} {perArea.toLocaleString()} / {listing.areaUnit || "sqft"}
+              </div>
             )}
           </div>
-          <span className="mt-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary-text border border-primary/20 whitespace-nowrap shrink-0 max-w-[45%] truncate">
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-primary/10 text-primary-text ring-1 ring-inset ring-primary/20 whitespace-nowrap shrink-0 max-w-[45%] truncate">
             {listing.propertyType || "Property"}
           </span>
         </div>
 
-        <h3 className="text-[15px] leading-6 font-semibold text-foreground line-clamp-2 min-h-[3rem] min-w-0 transition-colors group-hover:text-primary-text/90">
+        <h3
+          className="text-[15px] leading-6 font-semibold text-foreground line-clamp-2 min-h-[3rem] min-w-0 transition-colors group-hover:text-primary-text"
+          title={listing.title || undefined}
+        >
           {listing.title
             ? highlightQuery
               ? <Highlight text={listing.title} query={highlightQuery} />
@@ -390,13 +426,46 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
             : "Untitled Property"}
         </h3>
 
-        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5 line-clamp-1 min-w-0 min-h-[1.125rem]">
-          <MapPin className="w-3 h-3 shrink-0 text-primary-text" />
-          {highlightQuery ? <Highlight text={loc} query={highlightQuery} /> : loc}
+        <div className="text-xs text-muted-foreground flex items-center gap-1.5 min-w-0" title={loc}>
+          <MapPin className="w-3.5 h-3.5 shrink-0 text-primary-text/80" aria-hidden />
+          <span className="truncate">{highlightQuery ? <Highlight text={loc} query={highlightQuery} /> : loc}</span>
+          {listing.reference && !compact && (
+            <span className="ml-auto shrink-0 max-w-[40%] truncate font-mono text-[10px] text-muted-foreground/80" title={`Reference ${listing.reference}`}>
+              {highlightQuery ? <Highlight text={listing.reference} query={highlightQuery} /> : listing.reference}
+            </span>
+          )}
         </div>
 
-        <div className={cn("min-w-0", compact ? "min-h-[3.25rem]" : "min-h-[3.75rem]")}>
+        <div
+          data-testid="property-card-metrics"
+          className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-xl bg-muted/50 px-3 py-2 text-xs text-muted-foreground ring-1 ring-inset ring-border/60"
+        >
+          {listing.beds > 0 || listing.propertyType?.toLowerCase().includes("apart") ? (
+            <Spec icon={Bed}>{listing.beds > 0 ? `${listing.beds} ${listing.beds === 1 ? "bed" : "beds"}` : "Studio"}</Spec>
+          ) : null}
+          {listing.baths > 0 && <Spec icon={Bath}>{`${listing.baths} ${listing.baths === 1 ? "bath" : "baths"}`}</Spec>}
+          {listing.area > 0 && <Spec icon={Maximize}>{`${Math.round(listing.area).toLocaleString()} ${listing.areaUnit || "sqft"}`}</Spec>}
+          {!compact && listing.parking > 0 && <Spec icon={CarFront}>{`${listing.parking} parking`}</Spec>}
+          {!(listing.beds > 0 || listing.baths > 0 || listing.area > 0) && <span className="italic">No size details</span>}
+        </div>
+
+        {(furnishedLabel || readiness) && (
+          <div className="flex flex-wrap gap-1.5">
+            {readiness && (
+              <span className="inline-flex items-center rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success ring-1 ring-inset ring-success/20">
+                {readiness}
+              </span>
+            )}
+            {furnishedLabel && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2 py-0.5 text-[10px] font-semibold text-secondary-text ring-1 ring-inset ring-secondary/25">
+                <Sofa className="h-3 w-3" aria-hidden /> {furnishedLabel}
+              </span>
+            )}
+          </div>
+        )}
+
           {hasVideoTour && videoTourHref ? (
+            <div className="min-w-0">
             <>
               {videoPlaysInline ? (
                 <button
@@ -483,99 +552,38 @@ const PropertyCard = ({ listing, highlightQuery, status, compact = false, isFavo
                 </DialogContent>
               </Dialog>
             </>
+            </div>
           ) : null}
-        </div>
-
-        <div className="h-px shrink-0 bg-gradient-to-r from-transparent via-border to-transparent" />
-
-        <div className="flex flex-col gap-1.5 min-w-0">
-          <div
-            className={cn(
-              "min-w-0 text-[11px] text-muted-foreground",
-              listing.agent?.name &&
-                (compact
-                  ? "flex flex-col gap-2"
-                  : "grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 items-center"),
-            )}
-          >
-            <div
-              data-testid="property-card-metrics"
-              className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3"
-            >
-              {listing.beds > 0 && (
-                <span className="flex items-center gap-1 shrink-0">
-                  <Bed className="w-3.5 h-3.5 text-primary-text/70 shrink-0" />
-                  <span className="font-semibold text-foreground tabular-nums">{listing.beds}</span>
-                </span>
-              )}
-              {listing.baths > 0 && (
-                <span className="flex items-center gap-1 shrink-0">
-                  <Bath className="w-3.5 h-3.5 text-primary-text/70 shrink-0" />
-                  <span className="font-semibold text-foreground tabular-nums">{listing.baths}</span>
-                </span>
-              )}
-              {listing.area > 0 && (
-                <span className="flex min-w-0 max-w-full items-center gap-1">
-                  <Maximize className="w-3.5 h-3.5 shrink-0 text-primary-text/70" />
-                  <span className="min-w-0 font-semibold text-foreground truncate tabular-nums">
-                    {Math.round(listing.area).toLocaleString()} {listing.areaUnit}
-                  </span>
-                </span>
-              )}
-            </div>
-
-            <div
-              data-testid="property-card-agent"
-              className={cn(
-                "flex min-w-0 items-center gap-1 shrink-0",
-                compact
-                  ? "justify-start border-t border-border/50 pt-2"
-                  : "justify-end",
-                // Always reserve space so cards remain identical when agent is missing.
-                compact ? "min-h-[28px]" : "min-h-[20px]",
-              )}
-            >
-              {listing.agent?.name ? (
-                <>
-                  {listing.agent.photo ? (
-                    <AgentPhoto variant="avatar" src={listing.agent.photo} alt={listing.agent.name} />
-                  ) : (
-                    <div className="w-5 h-5 shrink-0 rounded-full bg-primary/15 border border-border/80 flex items-center justify-center">
-                      <Building2 className="w-3 h-3 text-primary-text/70" />
-                    </div>
-                  )}
-                  <span className="min-w-0 max-w-[5rem] truncate text-[10px] text-muted-foreground sm:max-w-[4.5rem]">
-                    {listing.agent.name.split(" ")[0]}
-                  </span>
-                </>
-              ) : (
-                <span className="sr-only">No agent</span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex min-w-0 w-full min-h-[34px]">
-            {listing.reference ? (
-              <span className="inline-flex w-full min-w-0 items-start gap-1.5 font-mono text-[10px] leading-snug bg-muted/60 px-2 py-1.5 rounded-lg border border-border/80 text-muted-foreground break-all">
-                <Hash className="w-2.5 h-2.5 shrink-0 mt-0.5 opacity-80" aria-hidden />
-                {listing.reference}
-              </span>
-            ) : (
-              <span className="sr-only">No reference</span>
-            )}
-          </div>
-        </div>
-
-        {/* CTA strip — clicks pass through to the full-card overlay link (pointer-events-none parent). */}
         <div
-          className={cn(
-            "-mx-5 -mb-5 mt-1 flex items-center justify-between gap-2 border-t border-border/60 bg-gradient-to-r from-primary/[0.06] via-muted/20 to-transparent px-5 py-3.5 text-primary-text sm:-mx-6 sm:-mb-6 sm:px-6 rounded-b-[1.75rem]",
-            compact ? "text-[10px] font-semibold" : "text-xs font-semibold",
-          )}
-          aria-hidden
+          data-testid="property-card-agent"
+          className="mt-auto flex min-w-0 items-center gap-2.5 border-t border-border/70 pt-3"
         >
-          <span className="tracking-wide">View listing</span>
-          <ChevronRight className={cn("shrink-0 opacity-90 transition-transform duration-300 group-hover:translate-x-1", compact ? "w-3 h-3" : "w-4 h-4")} aria-hidden />
+          {listing.agent?.name ? (
+            <>
+              <PersonAvatar
+                src={listing.agent.photo}
+                name={listing.agent.name}
+                className={compact ? "h-7 w-7 text-[9px]" : "h-9 w-9 text-[11px]"}
+              />
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-xs font-semibold text-foreground" title={listing.agent.name}>
+                  {listing.agent.name}
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground" title={agencyName || listing.reference}>
+                  {agencyName || (listing.reference ? `Ref ${listing.reference}` : "Agent")}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+              {agencyName || "No agent listed"}
+            </div>
+          )}
+          {agencyName && (
+            <span title={agencyName} className="shrink-0">
+              <AgencyLogo src={agencyLogo} name={agencyName} className={compact ? "h-7 w-14 p-1 text-[9px]" : "h-10 w-20 text-[10px]"} />
+            </span>
+          )}
         </div>
       </div>
       </div>

@@ -101,9 +101,7 @@ const AgencyDetailPage = () => {
         <div className="bg-card border border-border rounded-2xl p-6 mb-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
-              <div className="w-14 h-14 rounded-xl bg-accent flex items-center justify-center overflow-hidden ring-1 ring-border shrink-0">
-                <AgencyLogo src={agencyLogo} name={agencyName} className="h-full w-full" />
-              </div>
+              <AgencyLogo src={agencyLogo} name={agencyName} className="h-14 w-24 rounded-xl text-sm" />
               <div className="min-w-0">
                 <h1 className="text-2xl font-extrabold font-heading text-foreground truncate">
                   {agencyName}
@@ -176,6 +174,7 @@ const AgencyDetailPage = () => {
                     key={`${a.name}:${a.email}`}
                     agent={a}
                     href={`/agencies/${encodeURIComponent(agencyName)}/agents/${encodeURIComponent(a.name)}`}
+                    showAgency={false}
                   />
                 ))}
               </div>
