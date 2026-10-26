@@ -1,3 +1,4 @@
+import { MarketAnalysis } from "@/components/analytics/MarketAnalysis";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -330,6 +331,7 @@ export default function ListingAnalyticsDashboard({
       </TabsContent>
 
       <TabsContent value="market" className="mt-5 space-y-6 outline-none">
+        <MarketAnalysis listings={listings} />
         <div className="grid lg:grid-cols-2 gap-5">
           <ChartShell
             title="Median sale price by bedrooms"

@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { SourceComparisonTable } from "@/components/SourceComparisonTable";
 import { ListingCharts, SourceCharts } from "./DashboardCharts";
 import { ImportReadiness } from "./ImportReadiness";
+import { MarketAnalysis } from "@/components/analytics/MarketAnalysis";
 import { DashboardHero } from "./DashboardHero";
 import { UploadDialog } from "@/components/sources/UploadDialog";
 import { DiffBadges } from "@/components/sources/VersionRow";
@@ -286,6 +287,7 @@ export function Dashboard() {
 
             <SourceCharts sources={sources} />
             <ListingCharts listings={listings} sources={sources} />
+            {listings.length > 0 && <MarketAnalysis listings={listings} title="Market analysis (all live listings)" />}
             <SourceComparisonTable sources={sources} />
             <NewestListings listings={listings} />
 
