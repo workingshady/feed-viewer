@@ -27,6 +27,8 @@ export async function uploadBlob(
       access: "public",
       handleUploadUrl: "/api/blob/upload",
       contentType: "application/gzip",
+      // Large files go up in parallel parts, which also retries a failed part instead of the whole file.
+      multipart: data.length > 20 * 1024 * 1024,
       onUploadProgress: (p) => onProgress?.(p.total ? p.loaded / p.total : 0),
     });
     return { url: blob.url };

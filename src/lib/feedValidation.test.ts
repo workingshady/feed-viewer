@@ -115,6 +115,7 @@ describe("Ziba import checks", () => {
       propertyType: "Apartment",
       city: "Dubai",
       community: "Marina",
+      propertyName: "Marina Gate",
       currency: "AED",
       images: ["https://img/1.jpg"],
       agent: { name: "A", phone: "1", email: "a@x.ae", photo: "" },

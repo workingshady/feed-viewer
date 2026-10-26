@@ -6,7 +6,8 @@ import { asyncHandler, HttpError } from "../http.js";
 import { requireRole } from "../auth/session.js";
 import { isAllowedBlobPath, sourceIdFromBlobUrl, type BlobStore } from "../sources/blobStore.js";
 
-const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+/** Gzipped feed or listings file; a 300 MB XML feed compresses to roughly 50 MB. */
+const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 
 /**
  * Browsers upload feed files straight to Vercel Blob (bypassing the 4.5 MB function body limit).

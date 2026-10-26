@@ -21,6 +21,10 @@ export interface Listing {
   plotSize: number;
   community: string;
   city: string;
+  /** Market code (AE, MY, SG, PK) from the listing's <country>, else the feed's <metadata>. */
+  country?: string;
+  /** State / emirate / province when the feed provides it. */
+  state?: string;
   address: string;
   subCommunity: string;
   propertyName: string;
@@ -97,6 +101,8 @@ export interface ImportResult {
   warnings: string[];
   errors: string[];
   detectedNodes: string[];
+  /** Feed market code from <metadata> (AE, MY, SG, PK), when recognised. */
+  market?: string;
   agencyInfo?: {
     name: string;
     logo: string;
@@ -136,6 +142,8 @@ export const UI_FIELDS: { key: keyof Listing; label: string; required: boolean }
   { key: 'plotSize', label: 'Plot Size', required: false },
   { key: 'community', label: 'Community', required: false },
   { key: 'city', label: 'City', required: false },
+  { key: 'country', label: 'Country', required: false },
+  { key: 'state', label: 'State', required: false },
   { key: 'address', label: 'Address', required: false },
   { key: 'subCommunity', label: 'Sub Community', required: false },
   { key: 'propertyName', label: 'Property Name', required: false },

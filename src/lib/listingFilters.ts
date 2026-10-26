@@ -1,3 +1,4 @@
+import type { Market } from "@/lib/markets";
 import type { ImportListingStatus, Listing } from "@/lib/types";
 
 /** "Has X" toggles on the listings page. Each must hold when active (AND). */
@@ -42,6 +43,24 @@ export const RENT_PRESETS: RangePreset[] = [
   { label: "200K–500K", min: "200000", max: "500000" },
   { label: "500K+", min: "500000", max: "" },
 ];
+
+const compactLabel = (n: number) => (n >= 1_000_000 ? `${+(n / 1_000_000).toFixed(1)}M` : `${+(n / 1_000).toFixed(1)}K`);
+
+/**
+ * Price presets in a market's currency. Rents use the market's usual quoting period (monthly in
+ * Singapore, Malaysia and Pakistan), because the filter compares the price as the feed states it.
+ */
+export function pricePresetsFor(market: Market, purpose: string): RangePreset[] {
+  if (market.code === "AE") return purpose === "rent" ? RENT_PRESETS : SALE_PRESETS;
+  const per = purpose === "rent" && market.defaultRentPeriod === "monthly" ? 12 : 1;
+  const edges = (purpose === "rent" ? market.bands.yearlyRent : market.bands.sale).filter((_, i) => i % 2 === 1 || i === 0).map((e) => Math.round(e / per));
+  const suffix = per === 12 ? " /mo" : "";
+  return [
+    { label: `Under ${compactLabel(edges[0])}${suffix}`, min: "", max: String(edges[0]) },
+    ...edges.slice(1).map((e, i) => ({ label: `${compactLabel(edges[i])}–${compactLabel(e)}${suffix}`, min: String(edges[i]), max: String(e) })),
+    { label: `${compactLabel(edges[edges.length - 1])}+${suffix}`, min: String(edges[edges.length - 1]), max: "" },
+  ];
+}
 
 export const AREA_PRESETS: RangePreset[] = [
   { label: "Under 800", min: "", max: "800" },

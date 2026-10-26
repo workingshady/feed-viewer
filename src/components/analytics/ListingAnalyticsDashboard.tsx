@@ -1,3 +1,4 @@
+import { MarketSwitch, useMarketScope } from "@/components/analytics/MarketScope";
 import { MarketAnalysis } from "@/components/analytics/MarketAnalysis";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -167,7 +168,7 @@ const DEFAULT_SECTION_LABELS = {
 } as const;
 
 export default function ListingAnalyticsDashboard({
-  listings,
+  listings: allListings,
   contextTitle,
   contextSubtitle,
   showAgentWorkload = false,
@@ -175,6 +176,10 @@ export default function ListingAnalyticsDashboard({
   sectionLabels: sectionLabelsProp,
   className,
 }: Props) {
+  // Prices in different currencies can't share a chart: analyse one market at a time.
+  const scope = useMarketScope(allListings);
+  const listings = scope.scoped;
+  const cur = scope.market.currency;
   const sectionLabels = { ...DEFAULT_SECTION_LABELS, ...sectionLabelsProp };
   const a = useMemo(() => computeListingAnalytics(listings), [listings]);
 
@@ -221,7 +226,15 @@ export default function ListingAnalyticsDashboard({
   const analyticsBody = !hasData ? (
     <EmptyChart message="No listings to analyze yet. Import a feed or widen your selection." />
   ) : (
-    <Tabs defaultValue="overview" className={cn("w-full", hideHero ? "mt-0" : "mt-6")}>
+    <>
+    {scope.markets.length > 1 && (
+      <div className={cn("flex flex-wrap items-center gap-2 text-xs text-muted-foreground", hideHero ? "mb-3" : "mt-6")}>
+        <span>Market</span>
+        <MarketSwitch scope={scope} />
+        <span>Prices in {cur}; each market is analysed on its own.</span>
+      </div>
+    )}
+    <Tabs defaultValue="overview" className={cn("w-full", hideHero || scope.markets.length > 1 ? "mt-0" : "mt-6")}>
       <TabsList className="dashboard-tabs-list grid w-full max-w-4xl grid-cols-2 sm:grid-cols-4 h-auto sm:h-10 gap-1 p-1">
         <TabsTrigger value="overview" className="text-xs sm:text-sm gap-1.5 rounded-lg data-[state=inactive]:border-transparent">
           <BarChart3 className="w-3.5 h-3.5 hidden sm:inline" />
@@ -306,7 +319,7 @@ export default function ListingAnalyticsDashboard({
           <div className="grid gap-6 md:grid-cols-2">
             {(["sale", "rent"] as const).map((p) => (
               <section key={p} aria-label={p === "sale" ? "Sale price bands" : "Rent bands"}>
-                <h4 className="mb-2 text-xs font-semibold">{p === "sale" ? "Sale price (AED)" : "Rent per year (AED)"}</h4>
+                <h4 className="mb-2 text-xs font-semibold">{p === "sale" ? `Sale price (${cur})` : `Rent per year (${cur})`}</h4>
                 <Columns data={bands[p]} xKey="label" series={LISTINGS} />
               </section>
             ))}
@@ -650,6 +663,7 @@ export default function ListingAnalyticsDashboard({
         </div>
       </TabsContent>
     </Tabs>
+    </>
   );
 
   return (

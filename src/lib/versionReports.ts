@@ -1,3 +1,4 @@
+import { dominantMarket } from "@/lib/markets";
 import type { Listing } from "@/lib/types";
 import type { SourceDTO, VersionDTO } from "@/lib/sourcesApi";
 import { fetchVersionListings } from "@/lib/versionBlobs";
@@ -150,8 +151,9 @@ export function marketCsv(listings: Listing[]): string {
     const total = buckets.reduce((n, b) => n + b.count, 0) || 1;
     for (const b of buckets) rows.push([section, b.label, b.count, `${Math.round((b.count / total) * 100)}%`]);
   };
-  push("Sale price (AED)", priceBands(listings, "sale"));
-  push("Rent per year (AED)", priceBands(listings, "rent"));
+  const cur = dominantMarket(listings).currency;
+  push(`Sale price (${cur})`, priceBands(listings, "sale"));
+  push(`Rent per year (${cur})`, priceBands(listings, "rent"));
   push("Bedrooms (all)", bedroomMix(listings));
   push("Property type", topValues(listings, (l) => l.propertyType, 50));
   push("Community", topValues(listings, (l) => l.community, 100));

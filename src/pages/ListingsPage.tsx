@@ -1,3 +1,4 @@
+import { marketOf, marketsIn } from "@/lib/markets";
 import AppHeader from "@/components/AppHeader";
 import { ListingsPageMapPanel } from "@/components/ListingsPageMapPanel";
 import PropertyCard from "@/components/PropertyCard";
@@ -19,6 +20,7 @@ import {
   LISTING_FEATURES,
   readSavedViews,
   RENT_PRESETS,
+  pricePresetsFor,
   SALE_PRESETS,
   writeSavedViews,
   type FeatureKey,
@@ -116,6 +118,8 @@ const ListingsPage = () => {
   const [propType, setPropType] = useState(() => readListingsPageUi()?.propType ?? "all");
   const [community, setCommunity] = useState(() => readListingsPageUi()?.community ?? "all");
   const [purpose, setPurpose] = useState(() => readListingsPageUi()?.purpose ?? "all");
+  /** Market filter (AE, SG, MY, PK), offered when the workspace mixes countries. */
+  const [market, setMarket] = useState("all");
   const [agent, setAgent] = useState(() => readListingsPageUi()?.agent ?? "all");
   const [city, setCity] = useState(() => readListingsPageUi()?.city ?? "all");
   const [furnished, setFurnished] = useState(() => readListingsPageUi()?.furnished ?? "all");
@@ -368,6 +372,7 @@ const ListingsPage = () => {
       if (propType !== "all" && l.propertyType !== propType) return false;
       if (community !== "all" && l.community !== community) return false;
       if (purpose !== "all" && l.purpose !== purpose) return false;
+      if (market !== "all" && marketOf(l).code !== market) return false;
       if (agent !== "all" && (l.agent?.name || "") !== agent) return false;
       if (city !== "all" && l.city !== city) return false;
       if (furnished !== "all" && l.furnished !== furnished) return false;
@@ -389,6 +394,7 @@ const ListingsPage = () => {
   }, [
     allListings,
     searchDebounced,
+    market,
     priceMin,
     priceMax,
     beds,
@@ -418,7 +424,7 @@ const ListingsPage = () => {
   const clearFilters = () => {
     setSearch(""); setPriceMin(""); setPriceMax(""); setBeds(""); setBaths("");
     setPropType("all"); setCommunity("all"); setPurpose("all"); setAgent("all");
-    setCity("all"); setFurnished("all"); setStatusFilter("all");
+    setCity("all"); setFurnished("all"); setStatusFilter("all"); setMarket("all");
     setAreaMin(""); setAreaMax(""); setCompletion("all"); setDeveloper("all"); setFeatures([]);
     setPage(1);
   };
@@ -455,10 +461,14 @@ const ListingsPage = () => {
     setFeatures((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
     setPage(1);
   };
-  const pricePresets = purpose === "rent" ? RENT_PRESETS : SALE_PRESETS;
+  const marketList = useMemo(() => marketsIn(allListings), [allListings]);
+  // Presets follow the picked market, else the largest one.
+  const presetMarket = marketList.find((m) => m.market.code === market)?.market ?? marketList[0]?.market;
+  const pricePresets = presetMarket ? pricePresetsFor(presetMarket, purpose) : purpose === "rent" ? RENT_PRESETS : SALE_PRESETS;
 
   const activeFilters = useMemo(() => {
     const chips: { key: string; label: string; onClear: () => void }[] = [];
+    if (market !== "all") chips.push({ key: "market", label: marketList.find((m) => m.market.code === market)?.market.name ?? market, onClear: () => setMarket("all") });
     if (search) chips.push({ key: "search", label: `"${search}"`, onClear: () => setSearch("") });
     if (priceMin) chips.push({ key: "pmin", label: `Min ${formatPriceCompact(Number(priceMin))}`, onClear: () => setPriceMin("") });
     if (priceMax) chips.push({ key: "pmax", label: `Max ${formatPriceCompact(Number(priceMax))}`, onClear: () => setPriceMax("") });
@@ -480,7 +490,7 @@ const ListingsPage = () => {
     if (furnished !== "all") chips.push({ key: "furn", label: furnished, onClear: () => setFurnished("all") });
     if (statusFilter !== "all") chips.push({ key: "status", label: statusFilter, onClear: () => setStatusFilter("all") });
     return chips;
-  }, [search, priceMin, priceMax, beds, baths, propType, community, purpose, agent, city, furnished, areaMin, areaMax, completion, developer, features, statusFilter]);
+  }, [market, marketList, search, priceMin, priceMax, beds, baths, propType, community, purpose, agent, city, furnished, areaMin, areaMax, completion, developer, features, statusFilter]);
 
   /* ── Empty state ── */
   if (allListings.length === 0) {
@@ -844,6 +854,14 @@ const ListingsPage = () => {
 
         {/* Quick filters — the four questions people ask first: rent or buy, how many beds, what type, what budget. */}
         <div className="mb-4 flex flex-wrap items-center gap-2">
+          {marketList.length > 1 && (
+            <Segmented
+              label="Market"
+              value={market}
+              onChange={(v) => { setMarket(v); setPriceMin(""); setPriceMax(""); setPage(1); }}
+              options={[{ value: "all", label: "All markets" }, ...marketList.map((m) => ({ value: m.market.code, label: `${m.market.name} · ${m.market.currency}`, count: m.count }))]}
+            />
+          )}
           <Segmented
             label="Purpose"
             value={purpose}

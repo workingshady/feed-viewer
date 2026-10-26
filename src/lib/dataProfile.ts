@@ -1,3 +1,4 @@
+import { annualRent, inMarketBounds, marketOf, rentPeriodMisread } from "@/lib/markets";
 import type { Listing } from "@/lib/types";
 import { UI_FIELDS } from "@/lib/types";
 import { isListingFieldFilled, LISTING_FIELD_QUALITY_KEYS } from "@/lib/listingFieldPresence";
@@ -174,7 +175,7 @@ type Ctx = {
 
 const fmt = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n).toLocaleString() : String(Math.round(n * 100) / 100));
 const isUrl = (u: string) => /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(u.trim());
-const ppsfKey = (l: Listing) => `${l.purpose}|${(l.propertyType || "").toLowerCase()}`;
+const ppsfKey = (l: Listing) => `${(l.currency || "").toUpperCase()}|${l.purpose}|${(l.propertyType || "").toLowerCase()}`;
 const contentKey = (l: Listing) => `${(l.title || "").trim().toLowerCase()}|${l.price}|${(l.community || "").toLowerCase()}|${l.beds}|${Math.round(l.area || 0)}`;
 
 const RULES: Rule[] = [
@@ -194,13 +195,26 @@ const RULES: Rule[] = [
     severity: "warning",
     field: "price",
     title: "Price outside a plausible range",
-    hint: "Sale prices under AED 50K or over 500M, or yearly rents under 5K or over 10M, are usually typos or wrong units.",
+    hint: "Checked against the listing's market (e.g. UAE sales AED 50K–500M, Singapore rents S$500+ a month). Usually a typo, extra zeros or the wrong unit.",
     test: (l) => {
       if (!(l.price > 0)) return null;
-      if (l.purpose === "sale" && (l.price < 50_000 || l.price > 500_000_000)) return fmt(l.price);
-      if (l.purpose === "rent" && (l.price < 5_000 || l.price > 10_000_000)) return fmt(l.price);
+      const m = marketOf(l);
+      if (l.purpose === "sale" && (l.price < m.minPrice.sale / 2 || l.price > m.maxPrice.sale)) return `${m.currency} ${fmt(l.price)}`;
+      if (l.purpose === "rent") {
+        const y = annualRent(l);
+        if (y < m.minPrice.yearlyRent / 2 || y > m.maxPrice.yearlyRent) return `${m.currency} ${fmt(l.price)}${l.rentPeriod ? ` ${l.rentPeriod}` : ""}`;
+      }
       return null;
     },
+  },
+  {
+    id: "rent_period_misread",
+    dimension: "validity",
+    severity: "error",
+    field: "price",
+    title: "Monthly-market rent without a period (imported as yearly)",
+    hint: "Singapore, Malaysia and Pakistan quote rents per month. Without <price><monthly>, Ziba reads the amount as yearly and shows the rent 12× too cheap.",
+    test: (l) => (rentPeriodMisread(l) ? `${l.currency} ${fmt(l.price)} (no period, ${marketOf(l).code})` : null),
   },
   {
     id: "area_implausible",
@@ -221,18 +235,19 @@ const RULES: Rule[] = [
     test: (l) => (l.beds > 15 ? String(l.beds) : null),
   },
   {
-    id: "coords_outside_uae",
+    id: "coords_outside_market",
     dimension: "validity",
     severity: "error",
     field: "latitude",
-    title: "Map point outside the UAE (or swapped)",
-    hint: "Latitude should be about 22.5–26.5 and longitude 51–56.5. Swapped values put the pin in the wrong country.",
+    title: "Map point outside the listing's country (or swapped)",
+    hint: "Checked against the listing's market box (UAE, Singapore, Malaysia or Pakistan). Ziba re-geocodes these from the address; swapped values put the pin in the wrong country.",
     test: (l) => {
       if (l.latitude == null || l.longitude == null) return null;
       const lat = Number(l.latitude);
       const lng = Number(l.longitude);
       if (lat === 0 && lng === 0) return "0, 0";
-      return lat < 22.5 || lat > 26.5 || lng < 51 || lng > 56.5 ? `${lat}, ${lng}` : null;
+      const m = marketOf(l);
+      return inMarketBounds(m, lat, lng) ? null : `${lat}, ${lng} (${m.code})`;
     },
   },
   {
@@ -253,7 +268,7 @@ const RULES: Rule[] = [
     severity: "warning",
     field: "agent.phone",
     title: "Agent phone has too few or too many digits",
-    hint: "International numbers have 9–15 digits (e.g. +9715XXXXXXXX).",
+    hint: "International numbers have 9–15 digits including the country code (+971 UAE, +65 Singapore, +60 Malaysia, +92 Pakistan).",
     test: (l) => {
       const p = (l.agent?.phone || "").trim();
       const d = p.replace(/\D+/g, "");
@@ -284,8 +299,9 @@ const RULES: Rule[] = [
     severity: "warning",
     field: "permitNumber",
     title: "Permit number is not numeric",
-    hint: "Dubai permits (Trakheesi) are digits only; letters usually mean a reference was pasted instead.",
+    hint: "UAE permits (Trakheesi / DLD) are digits only; letters usually mean a reference was pasted instead. Other markets don't use these permits.",
     test: (l) => {
+      if (!marketOf(l).permitsRequired) return null;
       const p = (l.permitNumber || "").trim();
       return p && !/^\d{5,15}$/.test(p.replace(/[\s-]/g, "")) ? p : null;
     },

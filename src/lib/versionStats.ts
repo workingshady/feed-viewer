@@ -1,3 +1,4 @@
+import { inMarketBounds, marketOf } from "@/lib/markets";
 import type { Listing } from "@/lib/types";
 import { annualizedPrice } from "@/lib/feedValidation";
 
@@ -9,7 +10,8 @@ export const QUALITY_CHECKS = [
   { key: "photos", label: "5+ photos", weight: 25, pass: (l: Listing) => (l.images?.length ?? 0) >= 5 },
   { key: "uniquePhotos", label: "No repeated photos", weight: 10, pass: (l: Listing) => !hasDuplicatePhotos(l) },
   { key: "description", label: "Description 200+ chars", weight: 15, pass: (l: Listing) => (l.description?.trim().length ?? 0) >= 200 },
-  { key: "permit", label: "Permit number", weight: 15, pass: (l: Listing) => !!l.permitNumber?.trim() },
+  // Advertising permits are a UAE requirement; listings in other markets pass.
+  { key: "permit", label: "Permit number", weight: 15, pass: (l: Listing) => !marketOf(l).permitsRequired || !!l.permitNumber?.trim() },
   { key: "coords", label: "Map location", weight: 15, pass: (l: Listing) => hasValidCoords(l) },
   { key: "price", label: "Price or POA", weight: 10, pass: (l: Listing) => l.price > 0 || isPoa(l) },
   { key: "title", label: "Title", weight: 5, pass: (l: Listing) => !!l.title?.trim() },
@@ -37,7 +39,8 @@ function hasDuplicatePhotos(l: Listing): boolean {
 
 function hasValidCoords(l: Listing): boolean {
   const { latitude: lat, longitude: lng } = l;
-  return lat != null && lng != null && !(lat === 0 && lng === 0) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  // Inside the listing's own country: Ziba treats an out-of-market point as missing and re-geocodes it.
+  return lat != null && lng != null && !(lat === 0 && lng === 0) && inMarketBounds(marketOf(l), lat, lng);
 }
 
 const isPoa = (l: Listing) => /^(yes|true|1)$/i.test(l.priceOnApplication?.trim() ?? "");

@@ -1,15 +1,17 @@
 import { FieldMapper } from "./fieldMapper";
 import { FieldMapping, ImportResult, Listing, MappingConfig, ParsedXmlNode, XmlFlatEntry, XmlFlatValue } from './types';
+import { MARKETS, marketCodeOf, marketCodeOfCurrency } from './markets';
 
 /** Max XML string length for single-file and stream-folder imports (JS chars; ASCII-heavy feeds ≈ bytes). */
-export const MAX_XML_TEXT_CHARS = 50_000_000;
+export const MAX_XML_TEXT_CHARS = 400_000_000;
 
 /**
  * Bump when parsing changes in a way that changes output for the same file. It is part of each
  * version's fingerprint, so "Re-parse" creates a new version instead of a duplicate.
  * 2: period-nested rent prices, CS offering, agent licence/id/info, raw type codes.
+ * 3: per-listing market (country / state), chunked parsing that skips malformed listings.
  */
-export const PARSER_VERSION = 2;
+export const PARSER_VERSION = 3;
 
 function sanitizeXml(xml: string): { xml: string; removed: number } {
   // XML 1.0 forbids most ASCII control chars (except tab, LF, CR).
@@ -220,7 +222,7 @@ function buildFlatMap(entries: XmlFlatEntry[]): Record<string, XmlFlatValue> {
 function buildListingFromPropertyEl(
   prop: Element,
   index: number,
-  defaults: { currency: string; areaUnit: string },
+  defaults: FeedDefaults,
   mappingConfig?: MappingConfig | null
 ): Listing {
   const rawXml = serializeElement(prop);
@@ -257,6 +259,9 @@ function buildListingFromPropertyEl(
 
   const community = coerceListingField('community', getByPath(getMappedField(mappings, 'community') || 'property.community'), defaults);
   const city = coerceListingField('city', getByPath(getMappedField(mappings, 'city') || 'property.city'), defaults);
+  const countryRaw = pickFlatValue(getByPath(getMappedField(mappings, 'country') || 'property.country'));
+  const country = marketCodeOf(countryRaw) ?? (defaults.country || marketCodeOfCurrency(defaults.currency) || '');
+  const state = pickFlatValue(getByPath(getMappedField(mappings, 'state') || 'property.state')).trim();
   const subCommunity = coerceListingField('subCommunity', getByPath(getMappedField(mappings, 'subCommunity') || 'property.sub_community'), defaults);
   const propertyName = coerceListingField('propertyName', getByPath(getMappedField(mappings, 'propertyName') || 'property.property_name'), defaults);
 
@@ -408,6 +413,8 @@ function buildListingFromPropertyEl(
     plotSize,
     community: String(community || ''),
     city: String(city || ''),
+    country,
+    state,
     address: [String(subCommunity || ''), String(community || ''), String(city || '')].filter(Boolean).join(', '),
     subCommunity: String(subCommunity || ''),
     propertyName: String(propertyName || ''),
@@ -434,88 +441,188 @@ function buildListingFromPropertyEl(
   };
 }
 
-export function parseXmlString(xmlString: string, strictMode = false, mappingConfig?: MappingConfig | null): ImportResult {
-  // Keep a sync API for existing callers; large feeds can be slow.
-  // For better UX with big files, prefer `parseXmlStringAsync`.
+type FeedDefaults = { currency: string; areaUnit: string; country: string };
+
+type FeedHead = { agencyInfo?: ImportResult["agencyInfo"]; defaults: FeedDefaults; market: string };
+
+/** Listings parsed per DOMParser call: small documents keep memory flat on 100 MB+ feeds. */
+const CHUNK_LISTINGS = 500;
+
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** First `<tag …>…</tag>` element in `xml` (searching only `xml`), parsed on its own. */
+function parseFirstElement(xml: string, tag: string): Element | null {
+  const m = new RegExp(`<${escapeRe(tag)}(?=[\\s>/])[\\s\\S]*?</${escapeRe(tag)}>`).exec(xml);
+  if (!m) return null;
+  const doc = new DOMParser().parseFromString(m[0], "text/xml");
+  return doc.querySelector("parsererror") ? null : doc.documentElement;
+}
+
+/** Feed-level info from the part of the file before the first listing. */
+function readFeedHead(head: string): FeedHead {
+  const agencyEl = parseFirstElement(head, "agency");
+  const metaEl = parseFirstElement(head, "metadata");
+  const countryEl = metaEl?.getElementsByTagName("country")[0];
+  const currency = metaEl ? metadataCurrency(metaEl) : "";
+  const market =
+    marketCodeOf(countryEl?.getAttribute("code")) ?? marketCodeOf(countryEl?.textContent) ?? marketCodeOfCurrency(currency) ?? "";
+  return {
+    agencyInfo: agencyEl
+      ? {
+          name: getTextContent(agencyEl, "company_name"),
+          logo: getTextContent(agencyEl, "company_logo"),
+          email: getTextContent(agencyEl, "company_email"),
+          phone: getTextContent(agencyEl, "company_phone"),
+          website: getTextContent(agencyEl, "company_website"),
+        }
+      : undefined,
+    defaults: {
+      currency: currency || (market ? MARKETS[market].currency : "AED"),
+      areaUnit: (metaEl && getTextContent(metaEl, "area_unit")) || "sqft",
+      country: market,
+    },
+    market,
+  };
+}
+
+/**
+ * Cuts a feed into its listing elements without building one DOM for the whole file, so feeds of
+ * any size parse with bounded memory. Matches `<property>` / `<property …>` but not `<property_type>`.
+ */
+export function splitListingBlocks(xml: string, tag: string): { head: string; blocks: string[] } {
+  const open = new RegExp(`<${escapeRe(tag)}(?=[\\s>/])`, "g");
+  const close = `</${tag}>`;
+  const blocks: string[] = [];
+  let head = "";
+  let m: RegExpExecArray | null;
+  while ((m = open.exec(xml))) {
+    if (!blocks.length) head = xml.slice(0, m.index);
+    const gt = xml.indexOf(">", m.index);
+    if (gt < 0) break;
+    if (xml[gt - 1] === "/") {
+      blocks.push(xml.slice(m.index, gt + 1));
+      open.lastIndex = gt + 1;
+      continue;
+    }
+    // Same-named elements nested inside a listing are kept inside it.
+    let depth = 1;
+    let pos = gt + 1;
+    let end = -1;
+    while (depth > 0) {
+      const c = xml.indexOf(close, pos);
+      if (c < 0) break;
+      open.lastIndex = pos;
+      const inner = open.exec(xml);
+      if (inner && inner.index < c) {
+        const igt = xml.indexOf(">", inner.index);
+        if (xml[igt - 1] !== "/") depth++;
+        pos = igt + 1;
+        continue;
+      }
+      depth--;
+      pos = c + close.length;
+      if (depth === 0) end = pos;
+    }
+    if (end < 0) break;
+    blocks.push(xml.slice(m.index, end));
+    open.lastIndex = end;
+  }
+  return { head: blocks.length ? head : xml, blocks };
+}
+
+/** Root element wrapping a chunk, re-declaring the root's namespaces so prefixed names stay valid. */
+function chunkRoot(head: string): [string, string] {
+  const root = /<([A-Za-z_][\w:.-]*)([^>]*)>/.exec(head.replace(/<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE[^>]*>/g, ""));
+  const ns = root ? (root[2].match(/\sxmlns(:[\w.-]+)?\s*=\s*("[^"]*"|'[^']*')/g) ?? []).join("") : "";
+  return [`<feedchunk${ns}>`, "</feedchunk>"];
+}
+
+type ParseOpts = {
+  strictMode?: boolean;
+  mappingConfig?: MappingConfig | null;
+  onProgress?: (p: { total: number; done: number }) => void;
+};
+
+/**
+ * Shared parser: feed head once, then listings in chunks of CHUNK_LISTINGS. A malformed chunk is
+ * retried listing by listing, so one broken listing no longer fails the whole file.
+ */
+function* parseFeedSteps(xmlString: string, opts: ParseOpts): Generator<void, ImportResult> {
+  const strictMode = opts.strictMode ?? false;
+  const mappingConfig = opts.mappingConfig ?? null;
   const warnings: string[] = [];
   const errors: string[] = [];
   const sanitized = sanitizeXml(xmlString);
   if (sanitized.removed > 0) {
     warnings.push(`Sanitized XML: removed ${sanitized.removed} invalid control character(s)`);
   }
+  const xml = sanitized.xml;
+  const listingTag = (mappingConfig?.listingNodePath?.split(".").filter(Boolean).pop() || "property").replace(/^@/, "");
+  const detectedNodes = ["list", "metadata", "agency", "properties", "property"];
+  const { head, blocks } = splitListingBlocks(xml, listingTag);
+
+  if (!blocks.length) {
+    // Nothing to chunk: report a parse error if the file is not XML at all, as before.
+    const doc = new DOMParser().parseFromString(xml, "text/xml");
+    const parseError = doc.querySelector("parsererror");
+    return {
+      success: false,
+      listings: [],
+      totalCount: 0,
+      warnings,
+      errors: [parseError ? `XML Parse Error: ${parseError.textContent}` : `No <${listingTag}> elements found in XML`],
+      detectedNodes: parseError ? [] : detectedNodes,
+    };
+  }
+
+  const { agencyInfo, defaults, market } = readFeedHead(head);
+  const [rootOpen, rootClose] = chunkRoot(head);
   const parser = new DOMParser();
-  const doc = parser.parseFromString(sanitized.xml, 'text/xml');
-
-  const parseError = doc.querySelector('parsererror');
-  if (parseError) {
-    return {
-      success: false,
-      listings: [],
-      totalCount: 0,
-      warnings,
-      errors: [`XML Parse Error: ${parseError.textContent}`],
-      detectedNodes: [],
-    };
-  }
-
-  // Detect agency info
-  const agencyEl = doc.getElementsByTagName('agency')[0];
-  const agencyInfo = agencyEl ? {
-    name: getTextContent(agencyEl, 'company_name'),
-    logo: getTextContent(agencyEl, 'company_logo'),
-    email: getTextContent(agencyEl, 'company_email'),
-    phone: getTextContent(agencyEl, 'company_phone'),
-    website: getTextContent(agencyEl, 'company_website'),
-  } : undefined;
-
-  // Detect metadata
-  const metaEl = doc.getElementsByTagName('metadata')[0];
-  const defaultCurrency = metaEl ? metadataCurrency(metaEl) : 'AED';
-  const defaultAreaUnit = metaEl ? (getTextContent(metaEl, 'area_unit') || 'sqft') : 'sqft';
-
-  // Find property nodes
-  const listingTag = (mappingConfig?.listingNodePath?.split('.').filter(Boolean).pop() || 'property').replace(/^@/, '');
-  const propertyNodes = doc.getElementsByTagName(listingTag);
-  const detectedNodes = ['list', 'metadata', 'agency', 'properties', 'property'];
-
-  if (propertyNodes.length === 0) {
-    return {
-      success: false,
-      listings: [],
-      totalCount: 0,
-      warnings,
-      errors: ['No <property> elements found in XML'],
-      detectedNodes,
-    };
-  }
+  const parseOne = (src: string): Element[] | string => {
+    const doc = parser.parseFromString(`${rootOpen}${src}${rootClose}`, "text/xml");
+    const err = doc.querySelector("parsererror");
+    if (err) return err.textContent?.trim() || "malformed XML";
+    return Array.from(doc.documentElement.children).filter((el) => el.localName === listingTag || el.tagName === listingTag);
+  };
 
   const listings: Listing[] = [];
-
-  for (let i = 0; i < propertyNodes.length; i++) {
-    const prop = propertyNodes[i];
+  const total = blocks.length;
+  let parseFailures = 0;
+  const build = (prop: Element, i: number) => {
     try {
-      const listing = buildListingFromPropertyEl(
-        prop,
-        i,
-        { currency: defaultCurrency, areaUnit: defaultAreaUnit },
-        mappingConfig
-      );
-
-      // Warnings for missing key fields
+      const listing = buildListingFromPropertyEl(prop, i, defaults, mappingConfig);
       if (!listing.price) warnings.push(`Listing ${listing.reference || i}: missing price`);
       if (!listing.title) warnings.push(`Listing ${listing.reference || i}: missing title`);
       if (listing.images.length === 0) warnings.push(`Listing ${listing.reference || i}: no images`);
-
       listings.push(listing);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      if (strictMode) {
-        errors.push(`Failed to parse listing ${i}: ${msg}`);
-      } else {
-        warnings.push(`Skipped listing ${i}: ${msg}`);
-      }
+      if (strictMode) errors.push(`Failed to parse listing ${i}: ${msg}`);
+      else warnings.push(`Skipped listing ${i}: ${msg}`);
     }
+  };
+
+  for (let start = 0; start < total; start += CHUNK_LISTINGS) {
+    const chunk = blocks.slice(start, start + CHUNK_LISTINGS);
+    const els = parseOne(chunk.join("\n"));
+    if (typeof els !== "string") {
+      els.forEach((el, k) => build(el, start + k));
+    } else {
+      chunk.forEach((block, k) => {
+        const one = parseOne(block);
+        if (typeof one !== "string" && one[0]) build(one[0], start + k);
+        else {
+          parseFailures++;
+          const msg = `Listing ${start + k}: XML error, skipped (${typeof one === "string" ? one.split("\n")[0].slice(0, 160) : "empty"})`;
+          if (strictMode) errors.push(msg);
+          else warnings.push(msg);
+        }
+      });
+    }
+    opts.onProgress?.({ total, done: Math.min(total, start + CHUNK_LISTINGS) });
+    yield; // between chunks: the async caller lets the browser paint
   }
+  if (parseFailures) warnings.unshift(`${parseFailures} listing(s) had malformed XML and were skipped`);
 
   return {
     success: errors.length === 0,
@@ -525,7 +632,16 @@ export function parseXmlString(xmlString: string, strictMode = false, mappingCon
     errors,
     detectedNodes,
     agencyInfo,
+    market: market || undefined,
   };
+}
+
+/** Synchronous parse (tests, small files). Large files: prefer `parseXmlStringAsync`. */
+export function parseXmlString(xmlString: string, strictMode = false, mappingConfig?: MappingConfig | null): ImportResult {
+  const steps = parseFeedSteps(xmlString, { strictMode, mappingConfig });
+  let r = steps.next();
+  while (!r.done) r = steps.next();
+  return r.value;
 }
 
 export async function parseXmlStringAsync(
@@ -533,84 +649,20 @@ export async function parseXmlStringAsync(
   opts: {
     strictMode?: boolean;
     mappingConfig?: MappingConfig | null;
+    /** Unused: listings are parsed in fixed chunks. Kept for callers. */
     batchSize?: number;
     onProgress?: (p: { total: number; done: number }) => void;
     yieldMs?: number;
   } = {}
 ): Promise<ImportResult> {
-  const strictMode = opts.strictMode ?? false;
-  const mappingConfig = opts.mappingConfig ?? null;
-  const batchSize = Math.max(1, Math.floor(opts.batchSize ?? 50));
   const yieldMs = Math.max(0, Math.floor(opts.yieldMs ?? 0));
-
-  const warnings: string[] = [];
-  const errors: string[] = [];
-  const sanitized = sanitizeXml(xmlString);
-  if (sanitized.removed > 0) {
-    warnings.push(`Sanitized XML: removed ${sanitized.removed} invalid control character(s)`);
-  }
-
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(sanitized.xml, "text/xml");
-
-  const parseError = doc.querySelector("parsererror");
-  if (parseError) {
-    return {
-      success: false,
-      listings: [],
-      totalCount: 0,
-      warnings,
-      errors: [`XML Parse Error: ${parseError.textContent}`],
-      detectedNodes: [],
-    };
-  }
-
-  const agencyEl = doc.getElementsByTagName("agency")[0];
-  const agencyInfo = agencyEl
-    ? {
-        name: getTextContent(agencyEl, "company_name"),
-        logo: getTextContent(agencyEl, "company_logo"),
-        email: getTextContent(agencyEl, "company_email"),
-        phone: getTextContent(agencyEl, "company_phone"),
-        website: getTextContent(agencyEl, "company_website"),
-      }
-    : undefined;
-
-  const metaEl = doc.getElementsByTagName("metadata")[0];
-  const defaultCurrency = metaEl ? metadataCurrency(metaEl) : "AED";
-  const defaultAreaUnit = metaEl ? getTextContent(metaEl, "area_unit") || "sqft" : "sqft";
-
-  const listingTag = (mappingConfig?.listingNodePath?.split(".").filter(Boolean).pop() || "property")
-    .replace(/^@/, "");
-  const propertyNodes = doc.getElementsByTagName(listingTag);
-  const detectedNodes = ["list", "metadata", "agency", "properties", "property"];
-
-  if (propertyNodes.length === 0) {
-    return {
-      success: false,
-      listings: [],
-      totalCount: 0,
-      warnings,
-      errors: ["No <property> elements found in XML"],
-      detectedNodes,
-    };
-  }
-
-  const listings: Listing[] = [];
-  const total = propertyNodes.length;
   /**
-   * Hand the main thread back between batches so the browser can paint.
-   *
-   * This deliberately does not sleep. `setTimeout(resolve, yieldMs)` paused for the full delay on
-   * every batch — with the import default of 18ms over a 1700-listing feed that is ~750ms of pure
-   * waiting, on top of setTimeout's 4ms clamp once timers nest. A scheduler yield (or a
-   * MessageChannel message, which is a macrotask and so still allows a paint) gives the same
-   * responsiveness for the cost of one task hop.
-   *
-   * `yieldMs` is honoured only by the final fallback, for environments with neither API.
+   * Hand the main thread back between chunks so the browser can paint. A scheduler yield (or a
+   * MessageChannel message, which is a macrotask and so still allows a paint) costs one task hop
+   * instead of a fixed sleep; `yieldMs` is honoured only by the final fallback.
    */
   const scheduler = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
-  const yieldToUI = (): Promise<void> => {
+  const pause = (): Promise<void> => {
     if (typeof scheduler?.yield === "function") return scheduler.yield();
     if (typeof MessageChannel !== "undefined") {
       return new Promise<void>((resolve) => {
@@ -624,48 +676,13 @@ export async function parseXmlStringAsync(
     }
     return new Promise<void>((resolve) => setTimeout(resolve, yieldMs));
   };
-
-  for (let i = 0; i < total; i++) {
-    const prop = propertyNodes[i];
-    try {
-      const listing = buildListingFromPropertyEl(
-        prop,
-        i,
-        { currency: defaultCurrency, areaUnit: defaultAreaUnit },
-        mappingConfig
-      );
-
-      if (!listing.price) warnings.push(`Listing ${listing.reference || i}: missing price`);
-      if (!listing.title) warnings.push(`Listing ${listing.reference || i}: missing title`);
-      if (listing.images.length === 0) warnings.push(`Listing ${listing.reference || i}: no images`);
-
-      listings.push(listing);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (strictMode) {
-        errors.push(`Failed to parse listing ${i}: ${msg}`);
-      } else {
-        warnings.push(`Skipped listing ${i}: ${msg}`);
-      }
-    }
-
-    const done = i + 1;
-    if (done % batchSize === 0 || done === total) {
-      opts.onProgress?.({ total, done });
-      // Give the UI thread a chance to paint between batches.
-      await yieldToUI();
-    }
+  const steps = parseFeedSteps(xmlString, { strictMode: opts.strictMode, mappingConfig: opts.mappingConfig, onProgress: opts.onProgress });
+  let r = steps.next();
+  while (!r.done) {
+    await pause();
+    r = steps.next();
   }
-
-  return {
-    success: errors.length === 0,
-    listings,
-    totalCount: listings.length,
-    warnings,
-    errors,
-    detectedNodes,
-    agencyInfo,
-  };
+  return r.value;
 }
 
 export function buildXmlTree(xmlString: string): ParsedXmlNode[] {

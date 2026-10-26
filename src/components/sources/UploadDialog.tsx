@@ -32,7 +32,11 @@ type Row = {
   error?: string;
 };
 
-const MAX_FILE_BYTES = 60 * 1024 * 1024;
+/**
+ * Feeds are parsed in chunks (memory stays flat) and gzipped before upload (~6× smaller), so the
+ * practical limit is the browser holding the text: 300 MB is far above any real feed seen so far.
+ */
+const MAX_FILE_BYTES = 300 * 1024 * 1024;
 
 /** Step label plus a bar: determinate when the stage reports progress, indeterminate otherwise. */
 function StageProgress({ stage, step }: { stage: UploadStage; step: 1 | 2 }) {

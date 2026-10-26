@@ -1,3 +1,4 @@
+import { MarketSwitch, useMarketScope } from "@/components/analytics/MarketScope";
 import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartCard, Columns, EmptyChart, HBars, SERIES } from "@/components/charts/ChartKit";
@@ -5,7 +6,6 @@ import { completionGroup, concentration, freshness, grossYieldByCommunity, ppsfB
 import type { Listing } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const aed = (n: number) => `AED ${Math.round(n).toLocaleString()}`;
 const pct = (n: number, d = 1) => `${n.toFixed(d)}%`;
 const LEVEL_TEXT: Record<Concentration["level"], string> = { low: "spread out", moderate: "moderately concentrated", high: "highly concentrated" };
 
@@ -13,7 +13,11 @@ const LEVEL_TEXT: Record<Concentration["level"], string> = { low: "spread out", 
  * Market analysis of the listings in scope: price per sq ft, gross asking yield, freshness and
  * concentration. Every listing is used; groups with too few listings are left out, not guessed.
  */
-export function MarketAnalysis({ listings, title = "Market analysis" }: { listings: Listing[]; title?: string }) {
+export function MarketAnalysis({ listings: allListings, title = "Market analysis" }: { listings: Listing[]; title?: string }) {
+  const scope = useMarketScope(allListings);
+  const listings = scope.scoped;
+  const cur = scope.market.currency;
+  const aed = (n: number) => `${cur} ${Math.round(n).toLocaleString()}`;
   const a = useMemo(() => {
     const byCommunity = ppsfByCommunity(listings);
     const yields = grossYieldByCommunity(listings);
@@ -65,7 +69,10 @@ export function MarketAnalysis({ listings, title = "Market analysis" }: { listin
     <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">{title}</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-sm">{title}{scope.markets.length > 1 ? ` · ${scope.market.name}` : ""}</CardTitle>
+            <MarketSwitch scope={scope} />
+          </div>
           <CardDescription className="text-xs">
             Based on all {listings.length.toLocaleString()} listings in scope and their <strong>asking</strong> prices (not registered transactions). Groups with fewer than 5 listings, or 3 per side for yields, are left out
             rather than estimated.
@@ -96,14 +103,14 @@ export function MarketAnalysis({ listings, title = "Market analysis" }: { listin
       <div className="grid gap-4 lg:grid-cols-2">
         <ChartCard
           title="Sale price per sq ft by community"
-          description="Median asking AED per sq ft (sales with a size). Hover for sample size; the table shows the interquartile range."
-          table={{ columns: ["Community", "Median AED/sqft", "P25", "P75", "Listings"], rows: a.byCommunity.map((g) => [g.name, Math.round(g.median), Math.round(g.p25), Math.round(g.p75), g.n]) }}
+          description={`Median asking ${cur} per sq ft (sales with a size). Hover for sample size; the table shows the interquartile range.`}
+          table={{ columns: ["Community", `Median ${cur}/sqft`, "P25", "P75", "Listings"], rows: a.byCommunity.map((g) => [g.name, Math.round(g.median), Math.round(g.p25), Math.round(g.p75), g.n]) }}
         >
-          {a.byCommunity.length ? <HBars data={a.byCommunity.map((g) => ({ community: `${g.name} (${g.n})`, median: Math.round(g.median) }))} labelKey="community" series={[{ key: "median", label: "AED / sq ft", color: SERIES[0] }]} valueFormat={(n) => n.toLocaleString()} limit={15} /> : <EmptyChart text="Not enough sales with a size" />}
+          {a.byCommunity.length ? <HBars data={a.byCommunity.map((g) => ({ community: `${g.name} (${g.n})`, median: Math.round(g.median) }))} labelKey="community" series={[{ key: "median", label: `${cur} / sq ft`, color: SERIES[0] }]} valueFormat={(n) => n.toLocaleString()} limit={15} /> : <EmptyChart text="Not enough sales with a size" />}
         </ChartCard>
         <ChartCard
           title="Gross asking yield by community"
-          description="Median annual rent ÷ median sale price for the same community, type and bedrooms. Gross: before service charges and fees (net is typically 1.5–2.5 points lower)."
+          description="Median annual rent ÷ median sale price for the same community, type and bedrooms (rents without a period read in the market's usual period). Gross: before service charges and fees (net is typically 1.5–2.5 points lower)."
           table={{ columns: ["Community", "Gross yield %", "Sale listings", "Rent listings", "Segments"], rows: a.yields.map((y) => [y.community, y.yieldPct.toFixed(2), y.saleN, y.rentN, y.segments]) }}
         >
           {a.yields.length ? <HBars data={a.yields.map((y) => ({ community: y.community, yield: Math.round(y.yieldPct * 10) / 10 }))} labelKey="community" series={[{ key: "yield", label: "Gross yield %", color: SERIES[2] }]} valueFormat={(n) => `${n.toFixed(1)}%`} limit={15} /> : <EmptyChart text="Needs both sale and rent listings in the same communities" />}
@@ -111,9 +118,9 @@ export function MarketAnalysis({ listings, title = "Market analysis" }: { listin
         <ChartCard
           title="Sale price per sq ft by bedrooms"
           description="Smaller units usually cost more per sq ft; a flat or inverted curve hints at size errors."
-          table={{ columns: ["Bedrooms", "Median AED/sqft", "Listings"], rows: a.beds.map((g) => [g.name, Math.round(g.median), g.n]) }}
+          table={{ columns: ["Bedrooms", `Median ${cur}/sqft`, "Listings"], rows: a.beds.map((g) => [g.name, Math.round(g.median), g.n]) }}
         >
-          {a.beds.length ? <Columns data={a.beds.map((g) => ({ beds: g.name, median: Math.round(g.median) }))} xKey="beds" series={[{ key: "median", label: "AED / sq ft", color: SERIES[0] }]} valueFormat={(n) => n.toLocaleString()} /> : <EmptyChart />}
+          {a.beds.length ? <Columns data={a.beds.map((g) => ({ beds: g.name, median: Math.round(g.median) }))} xKey="beds" series={[{ key: "median", label: `${cur} / sq ft`, color: SERIES[0] }]} valueFormat={(n) => n.toLocaleString()} /> : <EmptyChart />}
         </ChartCard>
         <ChartCard
           title="Listing freshness"

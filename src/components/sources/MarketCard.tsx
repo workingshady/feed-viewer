@@ -1,3 +1,4 @@
+import { dominantMarket } from "@/lib/markets";
 import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,7 +66,7 @@ export function MarketBreakdown({
           <div className="grid gap-6 md:grid-cols-3">
             <section aria-label="Price bands">
               <h4 className="mb-2 text-xs font-semibold text-foreground">
-                {purpose === "sale" ? "Sale price (AED)" : "Rent per year (AED)"}
+                {purpose === "sale" ? `Sale price (${dominantMarket(listings).currency})` : `Rent per year (${dominantMarket(listings).currency})`}
               </h4>
               <BarList buckets={insights.bands} emptyText={`No ${purpose === "sale" ? "sale" : "rental"} listings`} />
             </section>

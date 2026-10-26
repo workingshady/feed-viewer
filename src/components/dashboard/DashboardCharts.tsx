@@ -1,3 +1,4 @@
+import { MarketSwitch, useMarketScope } from "@/components/analytics/MarketScope";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -143,9 +144,13 @@ export function SourceCharts({ sources }: { sources: SourceDTO[] }) {
 }
 
 /** Market and quality breakdown of the listings in scope, with a purpose filter. */
-export function ListingCharts({ listings, sources }: { listings: Listing[]; sources: SourceDTO[] }) {
+export function ListingCharts({ listings: allListings, sources }: { listings: Listing[]; sources: SourceDTO[] }) {
   const navigate = useNavigate();
   const [purpose, setPurpose] = useState<Purpose>("all");
+  // One market at a time: prices in different currencies can't share a chart.
+  const scope = useMarketScope(allListings);
+  const listings = scope.scoped;
+  const cur = scope.market.currency;
   const scoped = useMemo(() => (purpose === "all" ? listings : listings.filter((l) => l.purpose === purpose)), [listings, purpose]);
 
   const data = useMemo(() => {
@@ -215,7 +220,7 @@ export function ListingCharts({ listings, sources }: { listings: Listing[]; sour
   }, [scoped, purpose]);
 
   const bedSeries = purpose === "all" ? SALE_RENT : SALE_RENT.filter((s) => s.key === purpose);
-  const priceTitle = purpose === "rent" ? "Rent per year (AED)" : "Sale price (AED)";
+  const priceTitle = purpose === "rent" ? `Rent per year (${cur})` : `Sale price (${cur})`;
   const sourceRows = sources.map((s) => s.name).filter((n) => data.perSource.has(n));
   const checkCols = QUALITY_CHECKS.map((c) => ({ key: c.key, label: c.label }));
 
@@ -225,6 +230,8 @@ export function ListingCharts({ listings, sources }: { listings: Listing[]; sour
         <h2 className="font-heading text-lg font-semibold">
           Market &amp; quality <span className="text-sm font-normal text-muted-foreground">· {scoped.length.toLocaleString()} listings</span>
         </h2>
+        <div className="flex flex-wrap items-center gap-2">
+        <MarketSwitch scope={scope} />
         <ToggleGroup type="single" size="sm" value={purpose} onValueChange={(v) => v && setPurpose(v as Purpose)} aria-label="Purpose">
           <ToggleGroupItem value="all" className="h-8 px-3 text-xs">
             All
@@ -236,6 +243,7 @@ export function ListingCharts({ listings, sources }: { listings: Listing[]; sour
             Rent
           </ToggleGroupItem>
         </ToggleGroup>
+        </div>
       </div>
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         <ChartCard title="Purpose mix" table={{ columns: ["Purpose", "Listings"], rows: data.purposeMix.map((d) => [d.label, d.value]) }}>
@@ -259,7 +267,7 @@ export function ListingCharts({ listings, sources }: { listings: Listing[]; sour
           title="Size vs sale price"
           description={`Each dot is a sale listing (log scales).${data.sampled ? ` Sample of ${data.sampled.toLocaleString()}.` : ""} Click to open.`}
           className="md:col-span-2"
-          table={{ columns: ["Listing", "Area (sqft)", "Price (AED)"], rows: data.scatter.map((d) => [d.title, d.area, d.price]) }}
+          table={{ columns: ["Listing", "Area (sqft)", `Price (${cur})`], rows: data.scatter.map((d) => [d.title, d.area, d.price]) }}
         >
           <ScatterPlot
             data={data.scatter}
@@ -285,12 +293,12 @@ export function ListingCharts({ listings, sources }: { listings: Listing[]; sour
         <ChartCard
           title="Sale price per sqft"
           description="Median for the busiest communities (5+ priced sales with an area)."
-          table={{ columns: ["Community", "Median AED/sqft", "Sales"], rows: data.ladder.map((d) => [d.label, d.median, d.count]) }}
+          table={{ columns: ["Community", `Median ${cur}/sqft`, "Sales"], rows: data.ladder.map((d) => [d.label, d.median, d.count]) }}
         >
           <HBars
             data={data.ladder}
             labelKey="label"
-            series={[{ key: "median", label: "AED / sqft", color: SERIES[0] }]}
+            series={[{ key: "median", label: `${cur} / sqft`, color: SERIES[0] }]}
             valueFormat={(n) => n.toLocaleString()}
           />
         </ChartCard>

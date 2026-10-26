@@ -1,4 +1,5 @@
 import type { Listing } from "@/lib/types";
+import { annualRent, inMarketBounds, marketOf, marketsIn, rentPeriodMisread } from "@/lib/markets";
 
 /**
  * Feed-level checks, grouped by rule (one row per problem type with a count and examples) rather
@@ -43,35 +44,8 @@ const KNOWN_TYPES = new Set([
   "Hotel Apartment", "Bungalow", "Bulk Units", "Factory", "Labor Camp",
 ]);
 
-/** Rough bounding boxes for markets the ZibaAi feeds cover; used to catch swapped or zero coordinates. */
-const MARKET_BOUNDS: Record<string, [number, number, number, number]> = {
-  AED: [22.5, 51.0, 26.5, 56.5], // UAE
-  SGD: [1.15, 103.55, 1.5, 104.1], // Singapore
-  MYR: [0.8, 99.5, 7.5, 119.5], // Malaysia
-  PKR: [23.5, 60.8, 37.1, 77.9], // Pakistan
-};
-
-const MARKET_BY_CURRENCY_NAME: Record<string, string> = {
-  "uae dirham": "AED",
-  aed: "AED",
-  "singapore dollar": "SGD",
-  sgd: "SGD",
-  "malaysian ringgit": "MYR",
-  myr: "MYR",
-  "pakistani rupee": "PKR",
-  pkr: "PKR",
-};
-
-/** Implausibly low prices per market: sale, yearly rent. Below these a price is probably a typo or a monthly figure. */
-const MIN_PRICE: Record<string, { sale: number; yearlyRent: number }> = {
-  AED: { sale: 100_000, yearlyRent: 10_000 },
-  SGD: { sale: 100_000, yearlyRent: 6_000 },
-};
-
-const PERIOD_FACTOR: Record<string, number> = { yearly: 1, monthly: 12, weekly: 52, daily: 365 };
-
-/** Annual rent when the feed states a period; otherwise the raw price. */
-export const annualizedPrice = (l: Listing) => (l.purpose === "rent" ? l.price * (PERIOD_FACTOR[l.rentPeriod || "yearly"] ?? 1) : l.price);
+/** Annual rent for comparisons (rents without a period are read in their market's usual period). */
+export const annualizedPrice = (l: Listing) => (l.purpose === "rent" ? annualRent(l) : l.price);
 
 /** Shape of an identifier: letters → A, digits → 9, runs collapsed with counts, e.g. "DP-S-64142" → "A{2}-A-9{5}". */
 export function shapeOf(value: string): string {
@@ -94,9 +68,10 @@ const ageDays = (l: Listing) => {
 };
 
 export function checkFeed(listings: Listing[]): FeedCheckResult {
-  const market = MARKET_BY_CURRENCY_NAME[(listings[0]?.currency ?? "").trim().toLowerCase()] ?? null;
-  const bounds = market ? MARKET_BOUNDS[market] : null;
-  const minPrice = market ? MIN_PRICE[market] : null;
+  // Each listing is checked against its own market (a feed may mix countries).
+  const markets = marketsIn(listings);
+  const main = markets[0]?.market ?? null;
+  const anyPermitMarket = markets.some((m) => m.market.permitsRequired);
 
   type Rule = Omit<FeedIssue, "count" | "examples"> & { test: (l: Listing) => boolean };
   const rules: Rule[] = [
@@ -110,27 +85,51 @@ export function checkFeed(listings: Listing[]): FeedCheckResult {
     {
       code: "coords_outside_market",
       severity: "warning",
-      title: market ? `Map location outside the ${market} market` : "Map location outside the feed's market",
-      hint: "Latitude and longitude may be swapped or wrong.",
+      title: markets.length === 1 && main ? `Map location outside ${main.name}` : "Map location outside the listing's country",
+      hint: "Latitude and longitude may be swapped or wrong; Ziba treats these as missing and re-geocodes from the address.",
       test: (l) =>
-        !!bounds && l.latitude != null && l.longitude != null && !(l.latitude === 0 && l.longitude === 0) &&
-        !(l.latitude >= bounds[0] && l.latitude <= bounds[2] && l.longitude >= bounds[1] && l.longitude <= bounds[3]),
+        l.latitude != null && l.longitude != null && !(l.latitude === 0 && l.longitude === 0) && !inMarketBounds(marketOf(l), l.latitude, l.longitude),
     },
     {
       code: "price_too_low",
       severity: "warning",
       title: "Suspiciously low price",
       hint: "Often a monthly rent filed as yearly, or a missing zero.",
-      test: (l) =>
-        !!minPrice && l.price > 0 && (l.purpose === "sale" ? l.price < minPrice.sale : l.purpose === "rent" && annualizedPrice(l) < minPrice.yearlyRent),
+      test: (l) => {
+        if (!(l.price > 0)) return false;
+        const m = marketOf(l).minPrice;
+        return l.purpose === "sale" ? l.price < m.sale : l.purpose === "rent" && annualizedPrice(l) < m.yearlyRent;
+      },
     },
-    { code: "rent_period_missing", severity: "warning", title: "Rental without a price period", hint: "Wrap the price in <yearly> or <monthly> so rents aren't misread.", test: (l) => l.purpose === "rent" && l.price > 0 && !l.rentPeriod },
+    {
+      code: "rent_period_misread",
+      severity: "error",
+      title: "Monthly rents sent without a period (shown 12× too cheap)",
+      hint: "Singapore, Malaysia and Pakistan quote rents per month; Ziba reads a rent without <price><monthly> as yearly. Nest the amount under <monthly>.",
+      test: rentPeriodMisread,
+    },
+    {
+      code: "rent_period_missing",
+      severity: "info",
+      title: "Rental without a price period (read as yearly)",
+      hint: "Fine for UAE yearly rents; wrap the price in <yearly> or <monthly> to be explicit.",
+      test: (l) => l.purpose === "rent" && l.price > 0 && !l.rentPeriod && !rentPeriodMisread(l),
+    },
     { code: "missing_bedrooms", severity: "warning", title: "Residential listing without bedrooms", hint: "Fill bedroom (0 for studios).", test: (l) => !COMMERCIAL_TYPES.has(l.propertyType) && (l.beds == null || Number.isNaN(l.beds)) },
     { code: "missing_area", severity: "warning", title: "No size", hint: "Fill size in the feed's area unit.", test: (l) => !(l.area > 0) },
     { code: "few_photos", severity: "warning", title: "Fewer than 5 photos", hint: "Portals rank listings with more photos higher.", test: (l) => (l.images?.length ?? 0) > 0 && l.images.length < 5 },
     { code: "short_description", severity: "warning", title: "Description under 200 characters", hint: "Short descriptions lower the portal quality score.", test: (l) => (l.description?.trim().length ?? 0) < 200 },
     { code: "agent_no_contact", severity: "warning", title: "Agent without phone or email", hint: "Leads can't reach the agent.", test: (l) => !l.agent?.phone?.trim() && !l.agent?.email?.trim() },
-    { code: "missing_permit", severity: market === "AED" ? "warning" : "info", title: "No permit number", hint: "Dubai listings need a RERA/DLD permit number.", test: (l) => !l.permitNumber?.trim() },
+    ...(anyPermitMarket
+      ? [{ code: "missing_permit", severity: "warning" as const, title: "UAE listing without a permit number", hint: "UAE listings need a RERA / DLD advertising permit; other markets are not checked.", test: (l: Listing) => marketOf(l).permitsRequired && !l.permitNumber?.trim() }]
+      : []),
+    {
+      code: "missing_name_or_description",
+      severity: "error",
+      title: "No property name or description",
+      hint: "Ziba's import policy skips listings missing property_name or description_en; neither can be filled by enrichment.",
+      test: (l) => !l.propertyName?.trim() || !l.description?.trim(),
+    },
     {
       code: "poa_not_published",
       severity: "warning",
@@ -288,7 +287,7 @@ export function checkFeed(listings: Listing[]): FeedCheckResult {
       code: "agents_share_email",
       severity: "info",
       title: `${people} agents become ${namesByEmail.size} profile${namesByEmail.size === 1 ? "" : "s"} on import`,
-      hint: `${shared.length} email address(es) are used by several agents (e.g. ${shared[0][0]}); Ziba merges them into one profile.`,
+      hint: `${shared.length} email address(es) are used by several agents (e.g. ${shared[0][0]}). Ziba's policy 6 collapses them into the agency: agency name, logo, email and phone, with the agent's ID, licence and info cleared.`,
       count: shared.reduce((n, [, s]) => n + s.size, 0),
       examples: [],
     });
@@ -331,6 +330,8 @@ const DROP_REASONS: [string, (l: Listing) => boolean][] = [
     "Missing required fields",
     (l) => !l.reference?.trim() || l.purpose === "unknown" || !l.propertyType?.trim() || !l.city?.trim() || !l.community?.trim() || !(l.price > 0),
   ],
+  // skip_policy.py: property_name and description_en are core fields that enrichment can't fill.
+  ["No property name or description", (l) => !l.propertyName?.trim() || !l.description?.trim()],
 ];
 
 /** Estimate of how many listings will publish on Ziba. Broken image URLs can only be seen after import. */

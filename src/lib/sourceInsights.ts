@@ -1,17 +1,17 @@
 import type { Listing } from "@/lib/types";
 import type { VersionDiff } from "@/lib/versionDiff";
 import { annualizedPrice } from "@/lib/feedValidation";
+import { dominantMarket } from "@/lib/markets";
 
 export type Bucket = { label: string; count: number };
 
-/** Price bands in AED, tuned separately for sale prices and annual rents. */
-const SALE_BANDS = [500_000, 1_000_000, 2_000_000, 3_000_000, 5_000_000, 10_000_000];
-const RENT_BANDS = [50_000, 80_000, 120_000, 180_000, 250_000, 400_000];
 
 const compact = (n: number) => (n >= 1_000_000 ? `${n / 1_000_000}M` : `${n / 1_000}K`);
 
 export function priceBands(listings: Listing[], purpose: "sale" | "rent"): Bucket[] {
-  const edges = purpose === "sale" ? SALE_BANDS : RENT_BANDS;
+  // Bands in the listings' own currency (pass listings of one market; see useMarketScope).
+  const { bands } = dominantMarket(listings);
+  const edges = purpose === "sale" ? bands.sale : bands.yearlyRent;
   const buckets: Bucket[] = [
     { label: `< ${compact(edges[0])}`, count: 0 },
     ...edges.slice(1).map((e, i) => ({ label: `${compact(edges[i])}–${compact(e)}`, count: 0 })),
